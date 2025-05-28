@@ -12,6 +12,12 @@ AWS_IAM_USER_SECRET=your_secret_access_key
 AWS_REGION=ap-northeast-2
 ```
 
+## 버킷명
+
+1. kikiannualrequest: 연차 관련 증빙자료 버킷
+2. kikibusdamage: 운행전점검시 차량 파손 자료 버킷
+3. kikinotice: 공지사항 첨부자료 버킷
+
 ## API 문서
 
 ### 1. 단일 파일 업로드
