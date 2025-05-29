@@ -3,14 +3,14 @@ import { format } from 'date-fns';
 import s3 from './s3_client.js';
 
 const uploadToS3 = async (params) => {
-    const {bucketName, file} = params;
+    const {bucketName, path, file} = params;
 
     try {
         const fileName = `${format(new Date(), 'yyyyMMdd_HHmmss')}_${file.originalname}`;
         
         const command = new PutObjectCommand({
             Bucket: bucketName,
-            Key: fileName,
+            Key: `${path}/${fileName}`,
             Body: file.buffer,
             ContentType: file.mimetype,
             ACL: 'public-read',
@@ -18,7 +18,7 @@ const uploadToS3 = async (params) => {
 
         await s3.send(command);
         
-        const url = `https://${bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileName}`;
+        const url = `https://${bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${path}/${fileName}`;
         return {
             success: true,
             fileName,
@@ -27,17 +27,18 @@ const uploadToS3 = async (params) => {
         };
     } catch (error) {
         console.error('S3 업로드 에러:', error);
-        throw new Error('파일 업로드 중 오류가 발생했습니다.');
+        throw new Error('파일 업로드 중 오류가 발생했습니다.:: ' + error);
     }
 };
 
 const uploadMultipleToS3 = async (params) => {
-    const {bucketName, files} = params;
+    const {bucketName, path, files} = params;
 
     try {
 
         const uploadPromises = files.map(file => uploadToS3({
             bucketName: bucketName,
+            path: path,
             file: file
         }));
         const results = await Promise.all(uploadPromises);

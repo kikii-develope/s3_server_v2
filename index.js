@@ -64,15 +64,20 @@ app.post('/s3/upload/multiple', upload.array('files', 10), async (req, res) => {
         return res.status(400).json({ message: '파일 개수가 10개를 초과했습니다.', status: 400 });
     }
     
-    const { bucketName } = req.body;
+    const { bucketName, path } = req.body;
 
     if(!bucketName) {
         return res.status(400).json({ message: 'bucketName is missing in request body.', status: 400 });
     }
 
+    if(!path) {
+        return res.status(400).json({ message: 'path is missing in request body.', status: 400 });
+    }
+
     try {
         const result = await uploadMultipleToS3({
             bucketName: bucketName,
+            path: path,
             files: req.files,
         });
 
