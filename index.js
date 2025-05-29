@@ -1,7 +1,9 @@
 import cors from 'cors';
 import express from 'express';
 import multer, { memoryStorage } from 'multer';
-import { uploadToS3, uploadMultipleToS3 } from './uploadController.js';
+import { uploadToS3, uploadMultipleToS3 } from './src/uploadController.js';
+import 'dotenv/config.js'
+
 
 const app = express();
 

@@ -1,6 +1,5 @@
 import { S3Client } from '@aws-sdk/client-s3';
-import dotenv from 'dotenv';
-dotenv.config({ path: '../.env' } );
+import 'dotenv/config.js'
 
 console.log('AWS 환경 변수 확인:', {
     region: process.env.AWS_REGION,

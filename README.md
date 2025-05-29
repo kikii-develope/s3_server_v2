@@ -118,6 +118,8 @@ AWS_REGION=ap-northeast-2
 
 ## Docker 실행 방법
 
+### 로컬에서 실행
+
 1. 이미지 빌드:
 ```bash
 docker build -t s3-upload-server .
@@ -126,6 +128,28 @@ docker build -t s3-upload-server .
 2. 컨테이너 실행:
 ```bash
 docker run -p 8989:8989 --env-file .env s3-upload-server
+```
+
+### Docker Hub 배포
+
+1. Docker Hub 로그인:
+```bash
+docker login
+```
+
+2. 이미지 태그 설정:
+```bash
+docker tag s3-upload-server [DOCKER_HUB_USERNAME]/s3-upload-server:latest
+```
+
+3. Docker Hub에 푸시:
+```bash
+docker push [DOCKER_HUB_USERNAME]/s3-upload-server:latest
+```
+
+4. 배포된 이미지 실행:
+```bash
+docker run -p 8989:8989 --env-file .env [DOCKER_HUB_USERNAME]/s3-upload-server:latest
 ```
 
 ## 로컬 실행 방법
