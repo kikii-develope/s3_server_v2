@@ -19,8 +19,8 @@ AWS_REGION=ap-northeast-2
 3. kikinotice: 공지사항 첨부자료 버킷
 
 4. startts-employees: 직원 증빙서류 업로드용 버킷(위의 세 버킷은 사용하다 deprecate 예정).
-  path rule: /{driver_id}/{document_type}/{file_name}
-  document_type
+  path rule: {driver_id}/{document_type}      // 맨앞 슬래시 X
+  - document_type
     leave_early: 중도귀가
     absent: 결근
     paid_annual: 유급
@@ -41,6 +41,7 @@ AWS_REGION=ap-northeast-2
   },
   "body": {
     "bucketName": string,
+    "path": string,
     "file": file
   }
 }

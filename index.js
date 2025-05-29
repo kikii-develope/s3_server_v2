@@ -90,4 +90,5 @@ app.post('/s3/upload/multiple', upload.array('files', 10), async (req, res) => {
 
 app.listen(8989, () => {
     console.log('Server is running on port 8989');
+    console.log("app version: ", process.env.APP_VERSION);
 });
