@@ -1,12 +1,21 @@
 import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { format } from 'date-fns';
 import s3 from './s3_client.js';
+import iconv from 'iconv-lite';
 
 const uploadToS3 = async (params) => {
     const {bucketName, path, file} = params;
 
     try {
-        const fileName = `${format(new Date(), 'yyyyMMdd_HHmmss')}_${file.originalname}`;
+        const decodedName = iconv.decode(Buffer.from(file.originalname, 'latin1'), 'utf-8');
+
+        const fileName = `${format(new Date(), 'yyyyMMdd_HHmmss')}_${decodedName}`;
+
+        console.log(file);
+        // console.log("BEFORE")
+        // console.log(file.originalname);
+        // console.log("AFTER")
+        // console.log(decodedName);
         
         const command = new PutObjectCommand({
             Bucket: bucketName,

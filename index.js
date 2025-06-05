@@ -57,6 +57,9 @@ app.post('s3/upload', upload.single('file'), async (req, res) => {
 });
 
 app.post('/s3/upload/multiple', upload.array('files', 10), async (req, res) => {
+    // console.log(req);
+
+    console.log(req.files);
 
     if (!req.files || req.files.length === 0) {
         return res.status(400).json({ message: '파일이 없습니다.', status: 400 });

@@ -63,7 +63,7 @@ AWS_REGION=ap-northeast-2
 
 ### 2. 다중 파일 업로드
 
-**엔드포인트:** `POST /upload/multiple`
+**엔드포인트:** `POST s3/upload/multiple`
 
 **Content-Type:** `multipart/form-data`
 
