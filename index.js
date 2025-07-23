@@ -4,7 +4,7 @@ import multer, { memoryStorage } from 'multer';
 import { uploadToS3, uploadMultipleToS3 } from './src/uploadController.js';
 import 'dotenv/config.js'
 import { test } from './src/webdav_client.js';
-
+import { pkg } from './src/app_info.js';
 const app = express();
 
 // CORS 설정 - 특정 도메인 허용
@@ -44,8 +44,16 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(requestLogger);  // 로깅 미들웨어 추가
 
+app.listen(8888, () => {
+    console.log('Server is running on port 8888');
+    console.log("app version: " + pkg.version);
+    // test();
+});
+
 app.get('/', (req, res) => {
-    res.send('Hello World');
+    res.json({ 
+        message: 'Hello World',
+    });
 });
 
 app.post('s3/upload', upload.single('file'), async (req, res) => {
@@ -72,15 +80,8 @@ app.post('s3/upload', upload.single('file'), async (req, res) => {
     }
 });
 
-app.listen(8888, () => {
-    console.log('Server is running on port 8888');
-    console.log("app version: ", process.env.APP_VERSION);
-    // test();
-});
-
 
 app.post('/s3/upload/multiple', upload.array('files', 10), async (req, res) => {
-    // console.log(req);
 
     console.log(req.files);
 
