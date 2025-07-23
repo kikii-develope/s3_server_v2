@@ -3,9 +3,24 @@ import express from 'express';
 import multer, { memoryStorage } from 'multer';
 import { uploadToS3, uploadMultipleToS3 } from './src/uploadController.js';
 import 'dotenv/config.js'
-
+import { test } from './src/webdav_client.js';
 
 const app = express();
+
+// CORS 설정 - 특정 도메인 허용
+const corsOptions = {
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:3003',
+    'http://localhost:8080',
+    'http://kikii.iptime.org:3013'
+  ],
+  credentials: true,  // 쿠키/인증 헤더 허용
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+};
+
+app.use(cors(corsOptions));
 
 const upload = multer({ storage: memoryStorage(), preservePath: false });
 
@@ -23,7 +38,6 @@ const requestLogger = (req, res, next) => {
     next();
 };
 
-app.use(cors());
 
 app.use(express.json());
 
@@ -58,9 +72,10 @@ app.post('s3/upload', upload.single('file'), async (req, res) => {
     }
 });
 
-app.listen(8989, () => {
-    console.log('Server is running on port 8989');
+app.listen(8888, () => {
+    console.log('Server is running on port 8888');
     console.log("app version: ", process.env.APP_VERSION);
+    // test();
 });
 
 
