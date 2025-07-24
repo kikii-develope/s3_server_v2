@@ -8,22 +8,25 @@ import { pkg } from './src/app_info.js';
 const app = express();
 
 // CORS 설정 - 특정 도메인 허용
-const corsOptions = {
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:3003',
-    'http://localhost:8080',
-    'http://kikii.iptime.org:3013'
-  ],
-  credentials: true,  // 쿠키/인증 헤더 허용
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-};
+// const corsOptions = {
+//   origin: [
+//     'http://localhost:3000',
+//     'http://localhost:3003',
+//     'http://localhost:8080',
+//     'http://kikii.iptime.org:3013'
+//   ],
+//   credentials: true,  // 쿠키/인증 헤더 허용
+//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+//   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+// };
 
-app.use(cors(corsOptions));
 
-const upload = multer({ storage: memoryStorage(), preservePath: false });
 
+app.use(cors());
+
+app.use(express.json());
+
+app.use(express.urlencoded({ extended: true }));
 // 요청 패킷 정보를 로깅하는 미들웨어
 const requestLogger = (req, res, next) => {
     console.log('\n=== 요청 패킷 정보 ===');
@@ -38,17 +41,7 @@ const requestLogger = (req, res, next) => {
     next();
 };
 
-
-app.use(express.json());
-
-app.use(express.urlencoded({ extended: true }));
-app.use(requestLogger);  // 로깅 미들웨어 추가
-
-app.listen(8888, () => {
-    console.log('Server is running on port 8888');
-    console.log("app version: " + pkg.version);
-    // test();
-});
+const upload = multer({ storage: memoryStorage(), preservePath: false });
 
 app.get('/', (req, res) => {
     res.json({ 
@@ -56,7 +49,7 @@ app.get('/', (req, res) => {
     });
 });
 
-app.post('s3/upload', upload.single('file'), async (req, res) => {
+app.post('/s3/upload', upload.single('file'), async (req, res) => {
 
     if (!req.file) {
         return res.status(400).json({ message: '파일이 없습니다.', status: 400 });
@@ -114,4 +107,14 @@ app.post('/s3/upload/multiple', upload.array('files', 10), async (req, res) => {
         console.error('멀티 업로드 에러:', error);
         res.status(400).json({ message: error.message, status: 400 });
     }
+});
+
+app.use(requestLogger);  // 로깅 미들웨어 추가
+
+const PORT_NUM = 80;
+
+app.listen(PORT_NUM, () => {
+    console.log('Server is running on port ' + PORT_NUM);
+    console.log("app version: " + pkg.version);
+    // test();
 });
