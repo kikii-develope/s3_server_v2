@@ -111,7 +111,7 @@ app.post('/s3/upload/multiple', upload.array('files', 10), async (req, res) => {
 
 app.use(requestLogger);  // 로깅 미들웨어 추가
 
-const PORT_NUM = 80;
+const PORT_NUM = 8888;
 
 app.listen(PORT_NUM, () => {
     console.log('Server is running on port ' + PORT_NUM);
