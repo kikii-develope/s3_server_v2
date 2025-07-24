@@ -11,12 +11,12 @@ service:
 env:
   - name: AWS_REGION
     value: ap-northeast-2
-  - name: AWS_IAM_USER_KEY
+  - name: AWS_ACCESS_KEY_ID
     valueFrom:
       secretKeyRef:
         name: aws-credentials
         key: accessKey
-  - name: AWS_IAM_USER_SECRET
+  - name: AWS_SECRET_ACCESS_KEY
     valueFrom:
       secretKeyRef:
         name: aws-credentials

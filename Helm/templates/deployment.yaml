@@ -23,4 +23,8 @@ spec:
               containerPort: {{ .Values.service.port }}
             - name: https
               containerPort: {{ .Values.service.httpsPort }}
+          env:
+{{- with .Values.env }}
+{{ toYaml . | indent 12 }}
+{{- end }}
 
