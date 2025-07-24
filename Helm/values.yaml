@@ -2,7 +2,7 @@ replicaCount: 1
 name: kikii-file-server-dev
 image:
   repository: kikidockerhub/file-server
-  tag: 1.0.8
+  tag: 1.0.12
   pullPolicy: IfNotPresent
 service:
   type: NodePort
