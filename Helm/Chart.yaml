@@ -1,0 +1,6 @@
+apiVersion: v2
+name: kikii-file-server-dev
+description: A Helm chart for kikii-file-server-dev Server V2
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
