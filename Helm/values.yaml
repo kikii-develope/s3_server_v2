@@ -8,3 +8,16 @@ service:
   type: NodePort
   port: 8888
   httpsPort: 443
+env:
+  - name: AWS_REGION
+    value: "ap-northeast-2"
+  - name: AWS_IAM_USER_KEY
+    valueFrom:
+      secretKeyRef:
+        name: aws-credentials
+        key: accessKey
+  - name: AWS_IAM_USER_SECRET
+    valueFrom:
+      secretKeyRef:
+        name: aws-credentials
+        key: secretKey
