@@ -3,8 +3,12 @@ import express from 'express';
 import multer, { memoryStorage } from 'multer';
 import { uploadToS3, uploadMultipleToS3 } from './src/uploadController.js';
 import 'dotenv/config.js'
-import { test } from './src/webdav_client.js';
+import { getDirectoryTest, getFileTest, test } from './src/webdav_client.js';
 import { pkg } from './src/app_info.js';
+import swaggerUi from 'swagger-ui-express';
+import { specs } from './src/swagger.js';
+
+
 const app = express();
 
 // CORS 설정 - 특정 도메인 허용
@@ -17,10 +21,10 @@ const app = express();
 //   ],
 //   credentials: true,  // 쿠키/인증 헤더 허용
 //   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-//   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+//   allowedHeaders: ['Content-Typeㄷ', 'Authorization', 'X-Requested-With']
 // };
 
-
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(specs));
 
 app.use(cors());
 
@@ -43,12 +47,69 @@ const requestLogger = (req, res, next) => {
 
 const upload = multer({ storage: memoryStorage(), preservePath: false });
 
+/**
+ * @swagger
+ * /:
+ *   get:
+ *     summary: 서버 상태 확인
+ *     description: 서버가 정상적으로 작동하는지 확인하는 엔드포인트
+ *     tags: [Health Check]
+ *     responses:
+ *       200:
+ *         description: 서버가 정상 작동 중
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Hello World"
+ */
 app.get('/', (req, res) => {
     res.json({ 
         message: 'Hello World',
     });
 });
 
+/**
+ * @swagger
+ * /s3/upload:
+ *   post:
+ *     summary: 단일 파일 S3 업로드
+ *     description: 단일 파일을 S3 버킷에 업로드합니다
+ *     tags: [S3 Upload]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *               - bucketName
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *                 description: 업로드할 파일
+ *               bucketName:
+ *                 type: string
+ *                 description: S3 버킷 이름
+ *     responses:
+ *       200:
+ *         description: 파일 업로드 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UploadResponse'
+ *       400:
+ *         description: 요청 오류
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
 app.post('/s3/upload', upload.single('file'), async (req, res) => {
 
     if (!req.file) {
@@ -73,7 +134,50 @@ app.post('/s3/upload', upload.single('file'), async (req, res) => {
     }
 });
 
-
+/**
+ * @swagger
+ * /s3/upload/multiple:
+ *   post:
+ *     summary: 다중 파일 S3 업로드
+ *     description: 최대 10개의 파일을 S3 버킷의 지정된 경로에 업로드합니다
+ *     tags: [S3 Upload]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - files
+ *               - bucketName
+ *               - path
+ *             properties:
+ *               files:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *                 description: 업로드할 파일들 (최대 10개)
+ *               bucketName:
+ *                 type: string
+ *                 description: S3 버킷 이름
+ *               path:
+ *                 type: string
+ *                 description: 업로드할 경로
+ *     responses:
+ *       200:
+ *         description: 파일 업로드 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/UploadResponse'
+ *       400:
+ *         description: 요청 오류
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
 app.post('/s3/upload/multiple', upload.array('files', 10), async (req, res) => {
 
     console.log(req.files);
@@ -116,5 +220,5 @@ const PORT_NUM = 80;
 app.listen(PORT_NUM, () => {
     console.log('Server is running on port ' + PORT_NUM);
     console.log("app version: " + pkg.version);
-    // test();
+    getDirectoryTest();
 });
