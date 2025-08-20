@@ -68,7 +68,20 @@ export const downloadFileFromWebDAV = async (req, res) => {
             });
         }
 
-        const file = await getFile(`/www/${decodedPath}`);
+        if (!path.includes(getBaseUrl())) {
+            return res.status(400).json({
+                message: 'path가 올바르지 않습니다.',
+                status: 400
+            });
+        }
+
+        const url = new URL(path);
+        const relativePath = url.pathname;
+
+        console.log(relativePath);
+
+
+        const file = await getFile(relativePath);
 
         if (!file) {
             return res.status(404).json({

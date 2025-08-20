@@ -139,6 +139,7 @@ export const ensureDirectory = async (path) => {
 }
 
 export const getFile = async (path) => {
+
   try {
     const file = await client.getFileContents(path);
 
