@@ -1,10 +1,10 @@
 import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { format } from 'date-fns';
-import s3 from './s3_client.js';
+import s3 from '../services/s3/s3Client.js';
 import iconv from 'iconv-lite';
 
 const uploadToS3 = async (params) => {
-    const {bucketName, path, file} = params;
+    const { bucketName, path, file } = params;
 
     try {
         const decodedName = iconv.decode(Buffer.from(file.originalname, 'latin1'), 'utf-8');
@@ -16,7 +16,7 @@ const uploadToS3 = async (params) => {
         // console.log(file.originalname);
         // console.log("AFTER")
         // console.log(decodedName);
-        
+
         const command = new PutObjectCommand({
             Bucket: bucketName,
             Key: `${path}/${fileName}`,
@@ -26,7 +26,7 @@ const uploadToS3 = async (params) => {
         });
 
         await s3.send(command);
-        
+
         const url = `https://${bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${path}/${fileName}`;
         return {
             success: true,
@@ -41,7 +41,7 @@ const uploadToS3 = async (params) => {
 };
 
 const uploadMultipleToS3 = async (params) => {
-    const {bucketName, path, files} = params;
+    const { bucketName, path, files } = params;
 
     try {
 
@@ -51,7 +51,7 @@ const uploadMultipleToS3 = async (params) => {
             file: file
         }));
         const results = await Promise.all(uploadPromises);
-        
+
         return {
             success: true,
             files: results

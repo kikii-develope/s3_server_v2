@@ -1,0 +1,17 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# 개발 환경에서는 nodemon 설치
+RUN npm install -g nodemon
+
+COPY package*.json ./
+
+RUN npm install
+
+COPY . .
+
+EXPOSE 8888
+
+# 개발 환경에서는 nodemon으로 실행 (파일 변경 감지)
+CMD ["npm", "run", "dev"] 

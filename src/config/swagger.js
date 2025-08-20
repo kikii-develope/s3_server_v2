@@ -14,7 +14,7 @@ const options = {
     },
     servers: [
       {
-        url: 'http://localhost:8888',
+        url: 'http://localhost:8989',
         description: 'Development server'
       }
     ],
@@ -77,7 +77,7 @@ const options = {
       }
     }
   },
-  apis: ['./index.js', './src/*.js'] // API 라우트 파일들
+  apis: ['./index.js', './src/router/*.js'] // API 라우트 파일들
 };
 
 export const specs = swaggerJsdoc(options); 
