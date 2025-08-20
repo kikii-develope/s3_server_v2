@@ -12,6 +12,35 @@ import {
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), preservePath: false });
 
+
+/**
+ * @swagger
+ * /webdav/info:
+ *   get:
+ *     summary: WebDAV 서버 정보 조회
+ *     description: WebDAV 서버의 기본 정보를 조회합니다
+ *     tags: [WebDAV]
+ *     responses:
+ *       200:
+ *         description: 서버 정보 조회 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 status:
+ *                   type: integer
+ *                 baseUrl:
+ *                   type: string
+ *                 timestamp:
+ *                   type: string
+ *       500:
+ *         description: 서버 오류
+ */
+router.get('/info', getWebDAVInfo);
+
 /**
  * @swagger
  * /webdav/upload:
@@ -44,13 +73,13 @@ const upload = multer({ storage: multer.memoryStorage(), preservePath: false });
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   type: string
- *                 status:
- *                   type: integer
- *                 path:
+ *                 success:
  *                   type: string
  *                 filename:
+ *                   type: string
+ *                 size:
+ *                   type: integer
+ *                 url:
  *                   type: string
  *       400:
  *         description: 요청 오류
@@ -58,6 +87,76 @@ const upload = multer({ storage: multer.memoryStorage(), preservePath: false });
  *         description: 서버 오류
  */
 router.post('/upload', upload.single('file'), uploadFileToWebDAV);
+
+
+/**
+ * @swagger
+ * /webdav/upload-multiple:
+ *   post:
+ *     summary: WebDAV 다중 파일 업로드
+ *     description: 여러 파일을 WebDAV 서버에 동시에 업로드합니다
+ *     tags: [WebDAV]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - files
+ *               - path
+ *             properties:
+ *               files:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *                 description: 업로드할 파일들 (여러 개 선택 가능)
+ *               path:
+ *                 type: string
+ *                 description: WebDAV 서버의 경로
+ *     responses:
+ *       200:
+ *         description: 다중 파일 업로드 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 status:
+ *                   type: integer
+ *                 path:
+ *                   type: string
+ *                 results:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       filename:
+ *                         type: string
+ *                       success:
+ *                         type: boolean
+ *                       size:
+ *                         type: integer
+ *                       url:
+ *                         type: string
+ *                 summary:
+ *                   type: object
+ *                   properties:
+ *                     total:
+ *                       type: integer
+ *                     success:
+ *                       type: integer
+ *                     failed:
+ *                       type: integer
+ *       400:
+ *         description: 요청 오류
+ *       500:
+ *         description: 서버 오류
+ */
+router.post('/upload-multiple', upload.array('files', 10), uploadMultipleFilesToWebDAV);
 
 /**
  * @swagger
@@ -170,102 +269,5 @@ router.post('/directory', createWebDAVDirectory);
  */
 router.get('/directory/:path(*)', getWebDAVDirectory);
 
-/**
- * @swagger
- * /webdav/info:
- *   get:
- *     summary: WebDAV 서버 정보 조회
- *     description: WebDAV 서버의 기본 정보를 조회합니다
- *     tags: [WebDAV]
- *     responses:
- *       200:
- *         description: 서버 정보 조회 성공
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                 status:
- *                   type: integer
- *                 baseUrl:
- *                   type: string
- *                 timestamp:
- *                   type: string
- *       500:
- *         description: 서버 오류
- */
-router.get('/info', getWebDAVInfo);
-
-
-/**
- * @swagger
- * /webdav/upload-multiple:
- *   post:
- *     summary: WebDAV 다중 파일 업로드
- *     description: 여러 파일을 WebDAV 서버에 동시에 업로드합니다
- *     tags: [WebDAV]
- *     requestBody:
- *       required: true
- *       content:
- *         multipart/form-data:
- *           schema:
- *             type: object
- *             required:
- *               - files
- *               - path
- *             properties:
- *               files:
- *                 type: array
- *                 items:
- *                   type: string
- *                   format: binary
- *                 description: 업로드할 파일들 (여러 개 선택 가능)
- *               path:
- *                 type: string
- *                 description: WebDAV 서버의 경로
- *     responses:
- *       200:
- *         description: 다중 파일 업로드 성공
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                 status:
- *                   type: integer
- *                 path:
- *                   type: string
- *                 results:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       filename:
- *                         type: string
- *                       success:
- *                         type: boolean
- *                       result:
- *                         type: object
- *                       error:
- *                         type: string
- *                 summary:
- *                   type: object
- *                   properties:
- *                     total:
- *                       type: integer
- *                     success:
- *                       type: integer
- *                     failed:
- *                       type: integer
- *       400:
- *         description: 요청 오류
- *       500:
- *         description: 서버 오류
- */
-router.post('/upload-multiple', upload.array('files', 10), uploadMultipleFilesToWebDAV);
 
 export default router; 

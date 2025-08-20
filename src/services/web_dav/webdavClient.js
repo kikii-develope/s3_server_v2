@@ -34,6 +34,8 @@ export const getBaseUrl = () => webdavUrl;
 
 export const uploadFile = async (path, file) => {
 
+  await ensureDirectory(path);
+
   const originalname = file.originalname;
 
   const extension = originalname.split('.').pop()?.toLowerCase();
@@ -42,7 +44,11 @@ export const uploadFile = async (path, file) => {
   const today = new Date();
   const dateStr = today.getFullYear().toString() +
     String(today.getMonth() + 1).padStart(2, '0') +
-    String(today.getDate()).padStart(2, '0');
+    String(today.getDate()).padStart(2, '0') +
+    String(today.getHours()).padStart(2, '0') +
+    String(today.getMinutes()).padStart(2, '0') +
+    String(today.getSeconds()).padStart(2, '0');
+
 
   // UUID 생성 후 앞 5자리만 추출
   const uuidShort = uuidv4().replace(/-/g, '').substring(0, 5);
@@ -55,24 +61,11 @@ export const uploadFile = async (path, file) => {
   try {
     const res = await client.putFileContents(`www/${path}/${file.originalname}`, file.buffer);
 
-    return res;
+    return { res, file };
   } catch (error) {
     console.log(error);
-    const status = error.status;
 
-    // PUT:: 405 에러 발생 시 디렉토리 생성 후 다시 시도
-    if (status === 405) {
-      console.error("405: 디렉토리 생성 후 다시 시도합니다.");
-      await createDirectory(`/www/${path}`);
-      try {
-        const res = await client.putFileContents(`www/${path}/${file.originalname}`, file.buffer);
-
-        return res;
-      } catch (error) {
-        console.error(error);
-        throw error;
-      }
-    }
+    throw error;
   }
 }
 
@@ -82,10 +75,66 @@ export const uploadFile = async (path, file) => {
  */
 export const createDirectory = async (path) => {
   try {
-    await client.createDirectory(path);
+    await client.createDirectory(`/www/${path}`);
   } catch (error) {
     console.error(error);
     throw error;
+  }
+}
+
+/** WebDAV용 경로 정규화 (중복 슬래시 제거, 백슬래시 → 슬래시) */
+const normalizeWebDAVPath = (input) => {
+  let p = input.replace(/\\/g, "/").replace(/\/+/g, "/");
+  // '/.' 같은 끝 처리
+  p = p.replace(/\/\.$/, "/");
+  // 끝 슬래시는 제거(루트 '/'는 유지)
+  if (p.length > 1 && p.endsWith("/")) p = p.slice(0, -1);
+  return p;
+}
+
+
+/** 상위부터 한 계단씩 존재 여부 확인 후 생성 */
+export const ensureDirectory = async (path) => {
+
+  console.log(path);
+  const normalized = normalizeWebDAVPath(path);
+
+  console.log(normalized);
+  if (!normalized || normalized === "/") return;
+
+  const isAbsolute = normalized.startsWith("/");
+  const parts = normalized.split("/").filter(Boolean);
+
+  // 누적 경로(절대경로면 '/'부터 시작)
+  let acc = isAbsolute ? "/" : "";
+
+  for (const part of parts) {
+    const next = acc === "/" ? `/${part}` : acc ? `${acc}/${part}` : part;
+
+
+    // 1) 이미 있으면 통과
+    const exists = await existDirectory(next);
+    console.log(next + " : " + exists);
+
+
+    if (!exists) {
+      try {
+
+        await client.createDirectory(`/www/${next}`);
+      } catch (err) {
+        // 경쟁 상태 혹은 서버별 응답 차이를 관용적으로 처리
+        const code = err?.status || err?.statusCode;
+        const msg = String(err?.message || err);
+        const maybeAlreadyExists =
+          code === 405 || code === 409 || /exists|allowed/i.test(msg);
+
+        if (!maybeAlreadyExists) {
+          throw new Error(`디렉토리 생성 실패: "${next}" — ${msg}`);
+        }
+      }
+    }
+
+    acc = next;
   }
 }
 
@@ -99,12 +148,13 @@ export const getFile = async (path) => {
   }
 }
 
-export const getDirectoryTest = async () => {
+export const existDirectory = async (path) => {
   try {
-    const directory = await client.getDirectoryContents("/www/tests");
-    console.log(directory);
+    const directory = await client.getDirectoryContents(`/www/${path}`);
+    return true;
   } catch (error) {
     console.error(error);
+    return false;
   }
 }
 
@@ -119,17 +169,21 @@ export const getDirectoryTest = async () => {
 export const uploadMultipleFilesParallel = async (path, files, concurrency = 3) => {
   const results = [];
 
+  await ensureDirectory(path);
+
   // 청크 단위로 분할하여 병렬 처리
   for (let i = 0; i < files.length; i += concurrency) {
     const chunk = files.slice(i, i + concurrency);
 
     const chunkPromises = chunk.map(async (file) => {
       try {
-        const result = await uploadFile(path, file);
+        const { res, file: f } = await uploadFile(path, file);
+
         return {
-          filename: file.originalname,
+          filename: f.originalname,
           success: true,
-          result: result
+          size: f.size,
+          url: getBaseUrl() + `/www/${path}/${file.originalname}`
         };
       } catch (error) {
         return {

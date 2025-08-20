@@ -1,4 +1,4 @@
-import { uploadFile, getFile, getDirectoryTest, createDirectory, getBaseUrl, uploadMultipleFilesParallel } from '../services/web_dav/webdavClient.js';
+import { uploadFile, getFile, createDirectory, getBaseUrl, uploadMultipleFilesParallel, existDirectory } from '../services/web_dav/webdavClient.js';
 
 /**
  * WebDAV 파일 업로드 컨트롤러
@@ -28,15 +28,13 @@ export const uploadFileToWebDAV = async (req, res) => {
             });
         }
 
-        const response = await uploadFile(path, file);
-        console.log("response");
-        console.log(response);
+        const { res, file: f } = await uploadFile(path, file);
 
         return res.status(200).json({
             message: 'WebDAV 파일 업로드 성공',
             status: 200,
             path: `${getBaseUrl()}/${path}/${file.originalname}`,
-            filename: file.originalname
+            filename: f.originalname
         });
 
     } catch (error) {
@@ -118,35 +116,6 @@ export const downloadFileFromWebDAV = async (req, res) => {
     }
 };
 
-// export const downloadFileFromWebDAV = async (req, res) => {
-//     try {
-//         const { path } = req.params;
-
-//         if (!path) {
-//             return res.status(400).json({ 
-//                 message: 'path가 필요합니다.', 
-//                 status: 400 
-//             });
-//         }
-
-//         const file = await getFile(path);
-
-//         return res.status(200).json({ 
-//             message: 'WebDAV 파일 다운로드 성공', 
-//             status: 200,
-//             path: path,
-//             file: file
-//         });
-
-//     } catch (error) {
-//         console.error('WebDAV 다운로드 에러:', error);
-//         res.status(500).json({ 
-//             message: error.message, 
-//             status: 500 
-//         });
-//     }
-// };
-
 /**
  * WebDAV 디렉토리 생성 컨트롤러
  * @param {Object} req - Express request 객체
@@ -202,7 +171,7 @@ export const getWebDAVDirectory = async (req, res) => {
             });
         }
 
-        const directory = await getDirectoryTest(decodedPath);
+        const directory = await existDirectory(decodedPath);
 
         return res.status(200).json({
             message: 'WebDAV 디렉토리 조회 성공',
