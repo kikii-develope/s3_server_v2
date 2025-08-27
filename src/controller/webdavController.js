@@ -1,4 +1,6 @@
 import { uploadFile, getFile, createDirectory, getBaseUrl, uploadMultipleFilesParallel, existDirectory } from '../services/web_dav/webdavClient.js';
+import { decodePathTwiceToNFC } from '../utils/decoder.js';
+import mime from 'mime-types';
 
 /**
  * WebDAV 파일 업로드 컨트롤러
@@ -56,10 +58,6 @@ export const downloadFileFromWebDAV = async (req, res) => {
         // 경로 추출 (req.params.path 대신 req.params[0] 사용)
         const path = req.params[0] || req.params.path;
 
-        // URL 디코딩
-        const decodedPath = decodeURIComponent(path);
-        console.log('원본 path:', path);
-        console.log('디코딩된 path:', decodedPath);
 
         if (!path) {
             return res.status(400).json({
@@ -76,12 +74,14 @@ export const downloadFileFromWebDAV = async (req, res) => {
         }
 
         const url = new URL(path);
-        const relativePath = url.pathname;
-
-        console.log(relativePath);
 
 
-        const file = await getFile(relativePath);
+        // URL 디코딩
+        const decodedPath = decodePathTwiceToNFC(url.pathname);
+        console.log('원본 path:', path);
+        console.log('디코딩된 path:', decodedPath);
+
+        const file = await getFile(decodedPath);
 
         if (!file) {
             return res.status(404).json({
@@ -92,33 +92,25 @@ export const downloadFileFromWebDAV = async (req, res) => {
 
         // 파일 정보를 JSON으로 반환 (Swagger에서 확인용)
         const filename = decodedPath.split('/').pop() || 'download';
-        const extension = path.split('.').pop()?.toLowerCase();
+        const extension = decodedPath.split('.').pop()?.toLowerCase();
 
         // 파일 타입별 처리
         let fileContent = '';
-        let contentType = 'application/octet-stream';
+        let contentType = mime.lookup(extension) || 'application/octet-stream';
+        let contentDisposition = req.query.disposition || 'inline';
 
         if (['txt', 'json', 'xml', 'html', 'css', 'js'].includes(extension)) {
             fileContent = file.toString('utf8');
             contentType = 'text/plain';
-        } else {
-            fileContent = file.toString('base64');
-            contentType = 'application/octet-stream';
         }
 
-
-        return res.send(file);
-        //   return res.status(200).json({ 
-        //     message: 'WebDAV 파일 다운로드 성공', 
-        //     status: 200,
-        //     path: path,
-        //     file: {
-        //       content: fileContent,
-        //       size: file.length,
-        //       filename: filename,
-        //       contentType: contentType
-        //     }
-        //   });
+        res.set({
+            'Content-Type': contentType,
+            'Content-Disposition': `${contentDisposition}; filename*=UTF-8''${encodeURIComponent(filename)}`,
+            'Content-Length': file.length,
+            'Cache-Control': 'no-store',
+        });
+        return res.status(200).send(file);
 
     } catch (error) {
         console.error('WebDAV 다운로드 에러:', error);

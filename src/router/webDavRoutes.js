@@ -172,6 +172,15 @@ router.post('/upload-multiple', upload.array('files', 10), uploadMultipleFilesTo
  *         schema:
  *           type: string
  *         description: 다운로드할 파일 경로
+ *       - in: query
+ *         name: disposition
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: [inline, attachment]
+ *         description: >
+ *           응답을 브라우저에서 바로 표시할지(inline), 다운로드 받을지(attachment) 선택합니다.  
+ *           기본값은 inline 입니다.
  *     responses:
  *       200:
  *         description: 파일 다운로드 성공

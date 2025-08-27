@@ -11,21 +11,23 @@ import s3Routes from './src/router/s3Routes.js';
 const app = express();
 
 // CORS 설정 - 특정 도메인 허용
-// const corsOptions = {
-//   origin: [
-//     'http://localhost:3000',
-//     'http://localhost:3003',
-//     'http://localhost:8080',
-//     'http://kikii.iptime.org:3013'
-//   ],
-//   credentials: true,  // 쿠키/인증 헤더 허용
-//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-//   allowedHeaders: ['Content-Typeㄷ', 'Authorization', 'X-Requested-With']
-// };
+const corsOptions = {
+    origin: [
+        'http://localhost:3000',
+        'http://localhost:3003',
+        'http://localhost:8080',
+        'http://kikii.iptime.org:3012',
+        'http://kikii.iptime.org:3013',
+        'http://kikii.iptime.org:8989',
+    ],
+    credentials: true,  // 쿠키/인증 헤더 허용
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Typeㄷ', 'Authorization', 'X-Requested-With']
+};
 
 app.use('/swagger-ui.html', swaggerUi.serve, swaggerUi.setup(specs));
 
-app.use(cors());
+app.use(cors(corsOptions));
 
 app.use(express.json());
 
