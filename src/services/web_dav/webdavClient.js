@@ -56,6 +56,10 @@ export const uploadFile = async (path, file) => {
   // 새로운 파일명 생성: 날짜_UUID(5자리).확장자
   const newFilename = `${dateStr}_${uuidShort}.${extension}`;
 
+  if (path.startsWith("/")) {
+    path = path.replace("/", "");
+  }
+
   file.originalname = newFilename;
 
   try {
