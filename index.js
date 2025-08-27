@@ -1,28 +1,33 @@
 import cors from 'cors';
 import express from 'express';
 import multer, { memoryStorage } from 'multer';
-import { uploadToS3, uploadMultipleToS3 } from './src/uploadController.js';
 import 'dotenv/config.js'
-import { test } from './src/webdav_client.js';
-import { pkg } from './src/app_info.js';
+import { pkg } from './src/config/appInfo.js';
+import swaggerUi from 'swagger-ui-express';
+import { specs } from './src/config/swagger.js';
+import webDavRoutes from './src/router/webDavRoutes.js';
+import s3Routes from './src/router/s3Routes.js';
+
 const app = express();
 
 // CORS 설정 - 특정 도메인 허용
-// const corsOptions = {
-//   origin: [
-//     'http://localhost:3000',
-//     'http://localhost:3003',
-//     'http://localhost:8080',
-//     'http://kikii.iptime.org:3013'
-//   ],
-//   credentials: true,  // 쿠키/인증 헤더 허용
-//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-//   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-// };
+const corsOptions = {
+    origin: [
+        'http://localhost:3000',
+        'http://localhost:3003',
+        'http://localhost:8080',
+        'http://kikii.iptime.org:3012',
+        'http://kikii.iptime.org:3013',
+        'http://kikii.iptime.org:8989',
+    ],
+    credentials: true,  // 쿠키/인증 헤더 허용
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Typeㄷ', 'Authorization', 'X-Requested-With']
+};
 
+app.use('/swagger-ui.html', swaggerUi.serve, swaggerUi.setup(specs));
 
-
-app.use(cors());
+app.use(cors(corsOptions));
 
 app.use(express.json());
 
@@ -41,80 +46,39 @@ const requestLogger = (req, res, next) => {
     next();
 };
 
-const upload = multer({ storage: memoryStorage(), preservePath: false });
-
+/**
+ * @swagger
+ * /:
+ *   get:
+ *     summary: 서버 상태 확인
+ *     description: 서버가 정상적으로 작동하는지 확인하는 엔드포인트
+ *     tags: [Health Check]
+ *     responses:
+ *       200:
+ *         description: 서버가 정상 작동 중
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Hello World"
+ */
 app.get('/', (req, res) => {
-    res.json({ 
+    res.json({
         message: 'Hello World',
     });
 });
 
-app.post('/s3/upload', upload.single('file'), async (req, res) => {
-
-    if (!req.file) {
-        return res.status(400).json({ message: '파일이 없습니다.', status: 400 });
-    }
-
-    const { bucketName } = req.body;
-
-    if(!bucketName) {
-        return res.status(400).json({ message: 'bucketName is missing in request body.', status: 400 });
-    }
-
-    try {
-        const result = await uploadToS3({
-            bucketName: bucketName,
-            file: req.file,
-        });
-        return res.status(200).json({ message: '파일 업로드 성공', status: 200, object: result });
-    } catch (error) {
-        console.error('업로드 에러:', error);
-        res.status(400).json({ message: error.message, status: 400 });
-    }
-});
-
-
-app.post('/s3/upload/multiple', upload.array('files', 10), async (req, res) => {
-
-    console.log(req.files);
-
-    if (!req.files || req.files.length === 0) {
-        return res.status(400).json({ message: '파일이 없습니다.', status: 400 });
-    } else if(req.files.length > 10) {
-        return res.status(400).json({ message: '파일 개수가 10개를 초과했습니다.', status: 400 });
-    }
-    
-    const { bucketName, path } = req.body;
-    console.log(bucketName, path);
-
-    if(!bucketName) {
-        return res.status(400).json({ message: 'bucketName is missing in request body.', status: 400 });
-    }
-
-    if(!path) {
-        return res.status(400).json({ message: 'path is missing in request body.', status: 400 });
-    }
-
-    try {
-        const result = await uploadMultipleToS3({
-            bucketName: bucketName,
-            path: path,
-            files: req.files,
-        });
-
-        return res.status(200).json({ message: '파일 업로드 성공', status: 200, object: result });
-    } catch (error) {
-        console.error('멀티 업로드 에러:', error);
-        res.status(400).json({ message: error.message, status: 400 });
-    }
-});
-
 app.use(requestLogger);  // 로깅 미들웨어 추가
 
-const PORT_NUM = 8888;
+app.use('/webdav', webDavRoutes);
+app.use('/s3', s3Routes);
+
+const PORT_NUM = process.env.PORT || 8989;
 
 app.listen(PORT_NUM, () => {
     console.log('Server is running on port ' + PORT_NUM);
     console.log("app version: " + pkg.version);
-    // test();
 });
