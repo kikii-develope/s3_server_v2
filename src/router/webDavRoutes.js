@@ -62,6 +62,9 @@ router.get('/info', getWebDAVInfo);
  *                 type: string
  *                 format: binary
  *                 description: 업로드할 파일
+ *               filename:
+ *                 type: string
+ *                 description: 파일명
  *               path:
  *                 type: string
  *                 description: WebDAV 서버의 경로

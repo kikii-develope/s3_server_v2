@@ -1,4 +1,4 @@
-import { uploadFile, getFile, createDirectory, getBaseUrl, uploadMultipleFilesParallel, existDirectory } from '../services/web_dav/webdavClient.js';
+import { uploadFile, getFile, createDirectory, getBaseUrl, uploadMultipleFilesParallel, existDirectory, uploadSingle } from '../services/web_dav/webdavClient.js';
 import { decodePathTwiceToNFC } from '../utils/decoder.js';
 import mime from 'mime-types';
 
@@ -12,9 +12,13 @@ export const uploadFileToWebDAV = async (req, res) => {
     console.log("uploadFileToWebDAV");
     console.log(req.body);
 
+
     try {
-        const { path } = req.body;
+        const { path, filename } = req.body;
         const file = req.file;
+
+        console.log(req);
+        console.log(file);
 
         if (!file) {
             return res.status(400).json({
@@ -30,13 +34,16 @@ export const uploadFileToWebDAV = async (req, res) => {
             });
         }
 
-        const { res, file: f } = await uploadFile(path, file);
+        const result = await uploadSingle(path, file, filename);
 
         return res.status(200).json({
             message: 'WebDAV 파일 업로드 성공',
             status: 200,
             path: `${getBaseUrl()}/${path}/${file.originalname}`,
-            filename: f.originalname
+            filename: result.filename,
+            success: result.success,
+            size: result.size,
+            url: result.url
         });
 
     } catch (error) {
@@ -193,6 +200,8 @@ export const getWebDAVDirectory = async (req, res) => {
         });
     }
 };
+
+
 
 /**
  * WebDAV 서버 정보 조회 컨트롤러

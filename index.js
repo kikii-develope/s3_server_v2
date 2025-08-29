@@ -1,33 +1,32 @@
 import cors from 'cors';
 import express from 'express';
-import multer, { memoryStorage } from 'multer';
 import 'dotenv/config.js'
 import { pkg } from './src/config/appInfo.js';
 import swaggerUi from 'swagger-ui-express';
 import { specs } from './src/config/swagger.js';
-import webDavRoutes from './src/router/webDavRoutes.js';
 import s3Routes from './src/router/s3Routes.js';
+import webDavRoutes from "./src/router/webDavRoutes.js";
 
 const app = express();
 
 // CORS 설정 - 특정 도메인 허용
-const corsOptions = {
-    origin: [
-        'http://localhost:3000',
-        'http://localhost:3003',
-        'http://localhost:8080',
-        'http://kikii.iptime.org:3012',
-        'http://kikii.iptime.org:3013',
-        'http://kikii.iptime.org:8989',
-    ],
-    credentials: true,  // 쿠키/인증 헤더 허용
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Typeㄷ', 'Authorization', 'X-Requested-With']
-};
+// const corsOptions = {
+//     origin: [
+//         'http://localhost:3000',
+//         'http://localhost:3003',
+//         'http://localhost:8080',
+//         'http://kikii.iptime.org:3012',
+//         'http://kikii.iptime.org:3013',
+//         'http://kikii.iptime.org:8989',
+//     ],
+//     credentials: true,  // 쿠키/인증 헤더 허용
+//     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+//     allowedHeaders: ['Content-Typeㄷ', 'Authorization', 'X-Requested-With']
+// };
 
 app.use('/swagger-ui.html', swaggerUi.serve, swaggerUi.setup(specs));
 
-app.use(cors(corsOptions));
+app.use(cors());
 
 app.use(express.json());
 
@@ -81,4 +80,4 @@ const PORT_NUM = process.env.PORT || 8989;
 app.listen(PORT_NUM, () => {
     console.log('Server is running on port ' + PORT_NUM);
     console.log("app version: " + pkg.version);
-});
+}); 

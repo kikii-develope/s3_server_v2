@@ -2,6 +2,7 @@ import { createClient } from "webdav";
 import fs from 'fs';
 import https from 'https';
 import { v4 as uuidv4 } from 'uuid';
+import { toUtf8FromFile } from "../../utils/decoder.js";
 
 const ca = fs.readFileSync('local.crt');
 const agent = new https.Agent({
@@ -11,6 +12,15 @@ const agent = new https.Agent({
 
 const webdavUrl = process.env.WEBDAV_URL;
 
+/** WebDAV용 경로 정규화 (중복 슬래시 제거, 백슬래시 → 슬래시) */
+const normalizeWebDAVPath = (input) => {
+  let p = input.replace(/\\/g, "/").replace(/\/+/g, "/");
+  // '/.' 같은 끝 처리
+  p = p.replace(/\/\.$/, "/");
+  // 끝 슬래시는 제거(루트 '/'는 유지)
+  if (p.length > 1 && p.endsWith("/")) p = p.slice(0, -1);
+  return p;
+}
 
 const client = createClient(
   webdavUrl,
@@ -38,6 +48,9 @@ export const uploadFile = async (path, file) => {
 
   const originalname = file.originalname;
 
+  console.log("originalname");
+  console.log(originalname);
+
   const extension = originalname.split('.').pop()?.toLowerCase();
 
   // 날짜 형식 생성 (YYYYMMDD)
@@ -55,7 +68,6 @@ export const uploadFile = async (path, file) => {
 
   // 새로운 파일명 생성: 날짜_UUID(5자리).확장자
   const newFilename = `${dateStr}_${uuidShort}.${extension}`;
-
   if (path.startsWith("/")) {
     path = path.replace("/", "");
   }
@@ -64,6 +76,35 @@ export const uploadFile = async (path, file) => {
 
   try {
     const res = await client.putFileContents(`www/${path}/${file.originalname}`, file.buffer);
+
+    return { res, file };
+  } catch (error) {
+    console.log(error);
+
+    throw error;
+  }
+}
+
+
+export const uploadFile2 = async (path, file, filename) => {
+
+  console.log(filename);
+  filename = filename.replace(/ /g, "_");
+
+  await ensureDirectory(path);
+
+  if (path.startsWith("/")) {
+    path = path.replace("/", "");
+  }
+
+  file.originalname = filename;
+
+  const fullPath = `www/${path}/${filename}`;
+  try {
+    const res = await client.putFileContents(fullPath, file.buffer);
+
+    console.log(fullPath);
+    console.log(res);
 
     return { res, file };
   } catch (error) {
@@ -86,14 +127,23 @@ export const createDirectory = async (path) => {
   }
 }
 
-/** WebDAV용 경로 정규화 (중복 슬래시 제거, 백슬래시 → 슬래시) */
-const normalizeWebDAVPath = (input) => {
-  let p = input.replace(/\\/g, "/").replace(/\/+/g, "/");
-  // '/.' 같은 끝 처리
-  p = p.replace(/\/\.$/, "/");
-  // 끝 슬래시는 제거(루트 '/'는 유지)
-  if (p.length > 1 && p.endsWith("/")) p = p.slice(0, -1);
-  return p;
+export const uploadSingle = async (path, file, filename) => {
+  try {
+    const { res, file: f } = await uploadFile2(path, file, filename);
+
+    return {
+      filename: f.originalname,
+      success: true,
+      size: f.size,
+      url: getBaseUrl() + `/www/${path}/${file.originalname}`
+    };
+  } catch (error) {
+    return {
+      filename: file.originalname,
+      success: false,
+      error: error.message
+    };
+  }
 }
 
 
