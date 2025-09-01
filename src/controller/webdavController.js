@@ -1,5 +1,4 @@
-import { uploadFile, getFile, createDirectory, getBaseUrl, uploadMultipleFilesParallel, existDirectory, uploadSingle } from '../services/web_dav/webdavClient.js';
-import { decodePathTwiceToNFC } from '../utils/decoder.js';
+import { getFile, createDirectory, getBaseUrl, uploadMultipleFilesParallel, existDirectory, uploadSingle } from '../services/web_dav/webdavClient.js';
 import mime from 'mime-types';
 
 /**
@@ -9,16 +8,9 @@ import mime from 'mime-types';
  */
 export const uploadFileToWebDAV = async (req, res) => {
 
-    console.log("uploadFileToWebDAV");
-    console.log(req.body);
-
-
     try {
         const { path, filename } = req.body;
         const file = req.file;
-
-        console.log(req);
-        console.log(file);
 
         if (!file) {
             return res.status(400).json({
@@ -80,15 +72,8 @@ export const downloadFileFromWebDAV = async (req, res) => {
             });
         }
 
-        const url = new URL(path);
+        const file = await getFile(path);
 
-
-        // URL 디코딩
-        const decodedPath = decodePathTwiceToNFC(url.pathname);
-        console.log('원본 path:', path);
-        console.log('디코딩된 path:', decodedPath);
-
-        const file = await getFile(decodedPath);
 
         if (!file) {
             return res.status(404).json({
@@ -97,9 +82,11 @@ export const downloadFileFromWebDAV = async (req, res) => {
             });
         }
 
+
         // 파일 정보를 JSON으로 반환 (Swagger에서 확인용)
-        const filename = decodedPath.split('/').pop() || 'download';
-        const extension = decodedPath.split('.').pop()?.toLowerCase();
+
+        const filename = path.split('/').pop() || 'download';
+        const extension = path.split('.').pop()?.toLowerCase();
 
         // 파일 타입별 처리
         let fileContent = '';
@@ -173,8 +160,6 @@ export const getWebDAVDirectory = async (req, res) => {
 
         // URL 디코딩
         const decodedPath = decodeURIComponent(path || '');
-        console.log('원본 path:', path);
-        console.log('디코딩된 path:', decodedPath);
 
         if (!decodedPath) {
             return res.status(400).json({
@@ -233,8 +218,6 @@ export const getWebDAVInfo = async (req, res) => {
  * @param {Object} res - Express response 객체
  */
 export const uploadMultipleFilesToWebDAV = async (req, res) => {
-    console.log("uploadMultipleFilesToWebDAV");
-    console.log(req.body);
 
     try {
         const { path, filenames } = req.body;

@@ -2,7 +2,7 @@ import { createClient } from "webdav";
 import fs from 'fs';
 import https from 'https';
 import { v4 as uuidv4 } from 'uuid';
-import { toUtf8FromFile } from "../../utils/decoder.js";
+import { decodePathTwiceToNFC, toUtf8FromFile } from "../../utils/decoder.js";
 
 const ca = fs.readFileSync('local.crt');
 const agent = new https.Agent({
@@ -103,10 +103,8 @@ export const uploadSingle = async (path, file, filename) => {
 /** 상위부터 한 계단씩 존재 여부 확인 후 생성 */
 export const ensureDirectory = async (path) => {
 
-  console.log(path);
   const normalized = normalizeWebDAVPath(path);
 
-  console.log(normalized);
   if (!normalized || normalized === "/") return;
 
   const isAbsolute = normalized.startsWith("/");
@@ -121,7 +119,6 @@ export const ensureDirectory = async (path) => {
 
     // 1) 이미 있으면 통과
     const exists = await existDirectory(next);
-    console.log(next + " : " + exists);
 
 
     if (!exists) {
@@ -150,7 +147,21 @@ export const getFile = async (path) => {
   console.log(path);
 
   try {
-    const file = await client.getFileContents(path);
+
+    const url = new URL(path);
+
+    console.log("::: PATHNAME :::")
+    console.log(url.pathname);
+
+
+    // URL 디코딩
+    const decodedPath = decodePathTwiceToNFC(url.pathname);
+
+    console.log(decodedPath);
+
+    const file = await client.getFileContents(decodedPath);
+
+    console.log(file);
 
     return file;
   } catch (error) {
@@ -176,7 +187,7 @@ export const existDirectory = async (path) => {
  * @param {number} concurrency - 동시 업로드 수 (기본값: 3)
  * @returns {Array} 업로드 결과 배열
  */
-export const uploadMultipleFilesParallel = async (path, files, fileNames, concurrency = 3) => {
+export const uploadMultipleFilesParallel = async (path, files, filenames, concurrency = 3) => {
   const results = [];
 
   await ensureDirectory(path);
@@ -184,18 +195,50 @@ export const uploadMultipleFilesParallel = async (path, files, fileNames, concur
   // 청크 단위로 분할하여 병렬 처리
   for (let i = 0; i < files.length; i += concurrency) {
     const chunk = files.slice(i, i + concurrency);
-    const fileNameChunk = fileNames.slice(i, i + concurrency);
+    const filenameChunk = filenames.slice(i, i + concurrency);
 
     const chunkPromises = chunk.map(async (file, index) => {
       try {
-        const fileName = fileNameChunk[index];
-        const { res, file: f } = await uploadFile(path, file, fileName);
+        const filename = filenameChunk[index];
+
+        const filenameExtension = filename.split('.').pop();
+        const fileExtension = file.originalname.split(".").pop();
+        if (filenameExtension != fileExtension) {
+          return {
+            filename: decodePathTwiceToNFC(file.originalname),
+            success: false,
+            size: 0,
+            url: "",
+            msg: `파일과 파일명의 확장자가 다릅니다. (파일: ${fileExtension}, 파일명: ${filenameExtension})`
+          }
+
+        }
+
+
+        const fullPath = getBaseUrl() + `/www/${path}/${filename}`;
+
+        console.log(fullPath);
+
+        const existedFile = await getFile(fullPath);
+
+        if (existedFile) {
+          return {
+            filename: filename,
+            success: true,
+            size: existedFile.size,
+            url: getBaseUrl() + `/www/${path}/${filename}`,
+            status: "EXIST"
+          }
+        }
+
+        const { res, file: f } = await uploadFile(path, file, filename);
 
         return {
           filename: f.originalname,
           success: true,
           size: f.size,
-          url: getBaseUrl() + `/www/${path}/${file.originalname}`
+          url: getBaseUrl() + `/www/${path}/${file.originalname}`,
+          status: "CREATE"
         };
       } catch (error) {
         return {
