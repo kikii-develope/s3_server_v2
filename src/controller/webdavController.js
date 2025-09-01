@@ -201,8 +201,6 @@ export const getWebDAVDirectory = async (req, res) => {
     }
 };
 
-
-
 /**
  * WebDAV 서버 정보 조회 컨트롤러
  * @param {Object} req - Express request 객체
@@ -239,7 +237,7 @@ export const uploadMultipleFilesToWebDAV = async (req, res) => {
     console.log(req.body);
 
     try {
-        const { path } = req.body;
+        const { path, filenames } = req.body;
         const files = req.files; // multer에서 다중 파일 설정 필요
 
         if (!files || files.length === 0) {
@@ -247,6 +245,30 @@ export const uploadMultipleFilesToWebDAV = async (req, res) => {
                 message: '파일이 없습니다.',
                 status: 400
             });
+        }
+
+        let filenamesArray = [];
+
+        try {
+            if (filenames.startsWith("[") && filenames.endsWith("]")) {
+                filenamesArray = JSON.parse(filenames);
+            } else {
+                filenamesArray = filenames.split(",").map(s => s.trim());
+            }
+        } catch (e) {
+            console.error("filenames 파싱 실패:", e.message);
+            return res.status(400).json({
+                message: `파일명 배열 형식이 올바르지 않습니다 [${filenames}]`,
+                status: 400
+            });
+        }
+
+        if (files.length !== filenamesArray.length) {
+            return res.status(400).json({
+                message: '파일 개수와 파일명 개수가 동일하지 않습니다.',
+                status: 400
+            });
+
         }
 
         if (!path) {
@@ -257,7 +279,7 @@ export const uploadMultipleFilesToWebDAV = async (req, res) => {
         }
 
         // 병렬 업로드 실행 (동시성 제한: 3개)
-        const results = await uploadMultipleFilesParallel(path, files, 3);
+        const results = await uploadMultipleFilesParallel(path, files, filenamesArray, 3);
 
         const successCount = results.filter(r => r.success).length;
         const failCount = results.length - successCount;

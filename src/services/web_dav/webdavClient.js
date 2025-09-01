@@ -42,51 +42,7 @@ const client = createClient(
 
 export const getBaseUrl = () => webdavUrl;
 
-export const uploadFile = async (path, file) => {
-
-  await ensureDirectory(path);
-
-  const originalname = file.originalname;
-
-  console.log("originalname");
-  console.log(originalname);
-
-  const extension = originalname.split('.').pop()?.toLowerCase();
-
-  // 날짜 형식 생성 (YYYYMMDD)
-  const today = new Date();
-  const dateStr = today.getFullYear().toString() +
-    String(today.getMonth() + 1).padStart(2, '0') +
-    String(today.getDate()).padStart(2, '0') +
-    String(today.getHours()).padStart(2, '0') +
-    String(today.getMinutes()).padStart(2, '0') +
-    String(today.getSeconds()).padStart(2, '0');
-
-
-  // UUID 생성 후 앞 5자리만 추출
-  const uuidShort = uuidv4().replace(/-/g, '').substring(0, 5);
-
-  // 새로운 파일명 생성: 날짜_UUID(5자리).확장자
-  const newFilename = `${dateStr}_${uuidShort}.${extension}`;
-  if (path.startsWith("/")) {
-    path = path.replace("/", "");
-  }
-
-  file.originalname = newFilename;
-
-  try {
-    const res = await client.putFileContents(`www/${path}/${file.originalname}`, file.buffer);
-
-    return { res, file };
-  } catch (error) {
-    console.log(error);
-
-    throw error;
-  }
-}
-
-
-export const uploadFile2 = async (path, file, filename) => {
+export const uploadFile = async (path, file, filename) => {
 
   console.log(filename);
   filename = filename.replace(/ /g, "_");
@@ -102,9 +58,6 @@ export const uploadFile2 = async (path, file, filename) => {
   const fullPath = `www/${path}/${filename}`;
   try {
     const res = await client.putFileContents(fullPath, file.buffer);
-
-    console.log(fullPath);
-    console.log(res);
 
     return { res, file };
   } catch (error) {
@@ -129,7 +82,7 @@ export const createDirectory = async (path) => {
 
 export const uploadSingle = async (path, file, filename) => {
   try {
-    const { res, file: f } = await uploadFile2(path, file, filename);
+    const { res, file: f } = await uploadFile(path, file, filename);
 
     return {
       filename: f.originalname,
@@ -207,7 +160,7 @@ export const getFile = async (path) => {
 
 export const existDirectory = async (path) => {
   try {
-    const directory = await client.getDirectoryContents(`/www/${path}`);
+    await client.getDirectoryContents(`/www/${path}`);
     return true;
   } catch (error) {
     console.error(error);
@@ -223,7 +176,7 @@ export const existDirectory = async (path) => {
  * @param {number} concurrency - 동시 업로드 수 (기본값: 3)
  * @returns {Array} 업로드 결과 배열
  */
-export const uploadMultipleFilesParallel = async (path, files, concurrency = 3) => {
+export const uploadMultipleFilesParallel = async (path, files, fileNames, concurrency = 3) => {
   const results = [];
 
   await ensureDirectory(path);
@@ -231,10 +184,12 @@ export const uploadMultipleFilesParallel = async (path, files, concurrency = 3) 
   // 청크 단위로 분할하여 병렬 처리
   for (let i = 0; i < files.length; i += concurrency) {
     const chunk = files.slice(i, i + concurrency);
+    const fileNameChunk = fileNames.slice(i, i + concurrency);
 
-    const chunkPromises = chunk.map(async (file) => {
+    const chunkPromises = chunk.map(async (file, index) => {
       try {
-        const { res, file: f } = await uploadFile(path, file);
+        const fileName = fileNameChunk[index];
+        const { res, file: f } = await uploadFile(path, file, fileName);
 
         return {
           filename: f.originalname,

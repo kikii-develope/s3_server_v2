@@ -108,6 +108,7 @@ router.post('/upload', upload.single('file'), uploadFileToWebDAV);
  *             required:
  *               - files
  *               - path
+ *               - filenames
  *             properties:
  *               files:
  *                 type: array
@@ -118,6 +119,10 @@ router.post('/upload', upload.single('file'), uploadFileToWebDAV);
  *               path:
  *                 type: string
  *                 description: WebDAV 서버의 경로
+ *               filenames:
+ *                  type: array
+ *                  items:
+ *                    type: string
  *     responses:
  *       200:
  *         description: 다중 파일 업로드 성공
