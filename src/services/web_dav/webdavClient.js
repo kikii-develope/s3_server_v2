@@ -217,8 +217,6 @@ export const uploadMultipleFilesParallel = async (path, files, filenames, concur
 
         const fullPath = getBaseUrl() + `/www/${path}/${filename}`;
 
-        console.log(fullPath);
-
         const existedFile = await getFile(fullPath);
 
         if (existedFile) {
@@ -227,7 +225,7 @@ export const uploadMultipleFilesParallel = async (path, files, filenames, concur
             success: true,
             size: existedFile.size,
             url: getBaseUrl() + `/www/${path}/${filename}`,
-            status: "EXIST"
+            msg: "파일 존재, 요청을 생략합니다."
           }
         }
 
@@ -238,7 +236,7 @@ export const uploadMultipleFilesParallel = async (path, files, filenames, concur
           success: true,
           size: f.size,
           url: getBaseUrl() + `/www/${path}/${file.originalname}`,
-          status: "CREATE"
+          msg: "신규 생성 완료"
         };
       } catch (error) {
         return {
