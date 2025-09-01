@@ -50,7 +50,7 @@ npm run docker:stop:prod
 docker-compose -f docker-compose.dev.yml up --build
 
 # 운영 환경
-docker-compose -f docker-compose.prod.yml up --build
+docker compose -f docker-compose.prod.yml up --build
 ```
 
 ## 환경변수 설정
@@ -63,16 +63,16 @@ AWS_ACCESS_KEY_ID=your_access_key
 AWS_SECRET_ACCESS_KEY=your_secret_key
 AWS_REGION=ap-northeast-2
 
-# 서버 설정 (개발: 8888, 운영: 80)
-PORT=8888
+# 서버 설정 (개발: 8989, 운영: 80)
+PORT=8989
 NODE_ENV=development
 ```
 
 ## 접속 URL
 
 ### 개발 환경
-- **API 서버**: `http://localhost:8888`
-- **Swagger UI**: `http://localhost:8888/swagger-ui.html`
+- **API 서버**: `http://localhost:8989`
+- **Swagger UI**: `http://localhost:8989/swagger-ui.html`
 
 ### 운영 환경
 - **API 서버**: `http://localhost:80` (또는 `http://localhost`)

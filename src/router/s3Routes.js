@@ -43,7 +43,7 @@ const upload = multer({ storage: multer.memoryStorage(), preservePath: false });
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.post('/s3/upload', upload.single('file'), async (req, res) => {
+router.post('/upload', upload.single('file'), async (req, res) => {
 
     if (!req.file) {
         return res.status(400).json({ message: '파일이 없습니다.', status: 400 });
@@ -111,7 +111,7 @@ router.post('/s3/upload', upload.single('file'), async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.post('/s3/upload/multiple', upload.array('files', 10), async (req, res) => {
+router.post('/upload/multiple', upload.array('files', 10), async (req, res) => {
 
     console.log(req.files);
 

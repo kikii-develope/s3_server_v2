@@ -1,11 +1,12 @@
 import swaggerJsdoc from 'swagger-jsdoc';
+import { pkg } from './appInfo.js';
 
 const options = {
   definition: {
     openapi: '3.0.0',
     info: {
       title: 'File Uploader API',
-      version: '1.0.13',
+      version: pkg.version,
       description: 'S3 파일 업로드 서버 API 문서',
       contact: {
         name: 'inseok lee',
@@ -14,7 +15,7 @@ const options = {
     },
     servers: [
       {
-        url: 'http://localhost:8989',
+        url: process.env.PORT == 80 ? "https://file-server.kiki-bus.com" : 'http://localhost:8989',
         description: 'Development server'
       }
     ],
