@@ -45,6 +45,47 @@ const requestLogger = (req, res, next) => {
     next();
 };
 
+// 응답 패킷 정보를 로깅하는 미들웨어
+const responseLogger = (req, res, next) => {
+    const originalSend = res.send;
+    const originalJson = res.json;
+
+    // 응답 시작 시간 기록
+    const startTime = Date.now();
+
+    // res.send 오버라이드
+    res.send = function (data) {
+        const endTime = Date.now();
+        const duration = endTime - startTime;
+
+        console.log('\n=== 응답 패킷 정보 ===');
+        console.log('Status Code:', res.statusCode);
+        console.log('Headers:', res.getHeaders());
+        console.log('Duration:', duration + 'ms');
+        console.log('Response Data:', data);
+        console.log('========================\n');
+
+        originalSend.call(this, data);
+    };
+
+    // res.json 오버라이드
+    res.json = function (data) {
+        const endTime = Date.now();
+        const duration = endTime - startTime;
+
+        console.log('\n=== 응답 패킷 정보 ===');
+        console.log('Status Code:', res.statusCode);
+        console.log('Headers:', res.getHeaders());
+        console.log('Duration:', duration + 'ms');
+        console.log('Response Data:', data);
+        console.log('========================\n');
+
+        originalJson.call(this, data);
+    };
+
+    next();
+};
+
 /**
  * @swagger
  * /:
@@ -70,7 +111,8 @@ app.get('/', (req, res) => {
     });
 });
 
-app.use(requestLogger);  // 로깅 미들웨어 추가
+app.use(requestLogger);  // 요청 로깅 미들웨어 추가
+// app.use(responseLogger); // 응답 로깅 미들웨어 추가
 
 app.use('/webdav', webDavRoutes);
 app.use('/s3', s3Routes);

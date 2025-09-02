@@ -11,12 +11,6 @@ const uploadToS3 = async (params) => {
 
         const fileName = `${format(new Date(), 'yyyyMMdd_HHmmss')}_${decodedName}`;
 
-        console.log(file);
-        // console.log("BEFORE")
-        // console.log(file.originalname);
-        // console.log("AFTER")
-        // console.log(decodedName);
-
         const command = new PutObjectCommand({
             Bucket: bucketName,
             Key: `${path}/${fileName}`,

@@ -2,7 +2,7 @@ import { createClient } from "webdav";
 import fs from 'fs';
 import https from 'https';
 import { v4 as uuidv4 } from 'uuid';
-import { decodePathTwiceToNFC, toUtf8FromFile } from "../../utils/decoder.js";
+import { decodePathTwiceToNFC, decodePathTwiceToNFKC } from "../../utils/decoder.js";
 
 const ca = fs.readFileSync('local.crt');
 const agent = new https.Agent({
@@ -44,7 +44,6 @@ export const getBaseUrl = () => webdavUrl;
 
 export const uploadFile = async (path, file, filename) => {
 
-  console.log(filename);
   filename = filename.replace(/ /g, "_");
 
   await ensureDirectory(path);
@@ -144,39 +143,74 @@ export const ensureDirectory = async (path) => {
 
 export const getFile = async (path) => {
 
-  console.log(path);
-
   try {
 
     const url = new URL(path);
 
-    console.log("::: PATHNAME :::")
-    console.log(url.pathname);
+    const decodedPath = decodePathTwiceToNFKC(url.pathname);
+
+    let file = null;
+    try {
+      file = await client.getFileContents(decodedPath.normalize('NFKC'));
+    } catch (error) {
+
+      const directoryPath = decodedPath.split('/').slice(0, -1).join('/');
+      const fName = decodedPath.split('/').pop();
 
 
-    // URL 디코딩
-    const decodedPath = decodePathTwiceToNFC(url.pathname);
-
-    console.log(decodedPath);
-
-    const file = await client.getFileContents(decodedPath);
-
-    console.log(file);
+      file = await getFileFromDirectory(directoryPath, fName);
+    }
 
     return file;
   } catch (error) {
+    console.error("::: ERROR :::")
     console.error(error);
   }
 }
 
-export const existDirectory = async (path) => {
+export const getFileFromDirectory = async (directoryPath, fileName) => {
   try {
-    await client.getDirectoryContents(`/www/${path}`);
-    return true;
+    // 디렉토리에서 특정 파일 찾기
+    const directoryContents = await getDirectoryContents(directoryPath);
+
+
+    const targetFile = directoryContents.find(item => {
+
+      // 더 정확한 유니코드 코드 포인트 확인
+
+      const s2_1_1 = fileName.normalize('NFKC').split('').map(char => char.codePointAt(0));
+      const s2_3 = item.basename.normalize('NFKC').split('').map(char => char.codePointAt(0));
+
+      return item.type === 'file' && s2_1_1.every((code, index) => code === s2_3[index])
+    }
+    );
+
+    if (!targetFile) {
+      throw new Error(`파일을 찾을 수 없습니다: ${fileName}`);
+    }
+
+    // 파일 내용 불러오기
+    const result = await client.getFileContents(targetFile.filename);
+
+    return result;
   } catch (error) {
-    console.error(error);
-    return false;
+    console.error('파일 내용 조회 실패:', error);
+    throw error;
   }
+}
+
+export const getDirectoryContents = async (path) => {
+  try {
+    const res = await client.getDirectoryContents(path);
+    return res;
+  } catch (error) {
+    return null;
+  }
+}
+
+export const existDirectory = async (path) => {
+  const res = await getDirectoryContents(path);
+  return res !== null;
 }
 
 
