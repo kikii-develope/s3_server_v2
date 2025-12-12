@@ -1,6 +1,6 @@
 {
   "name": "file_uploader",
-  "version": "1.1.4",
+  "version": "1.2.0",
   "description": "S3 file upload server",
   "main": "index.js",
   "type": "module",

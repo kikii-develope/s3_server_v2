@@ -113,8 +113,6 @@ router.post('/upload', upload.single('file'), async (req, res) => {
  */
 router.post('/upload/multiple', upload.array('files', 10), async (req, res) => {
 
-    console.log(req.files);
-
     if (!req.files || req.files.length === 0) {
         return res.status(400).json({ message: '파일이 없습니다.', status: 400 });
     } else if (req.files.length > 10) {
@@ -122,7 +120,6 @@ router.post('/upload/multiple', upload.array('files', 10), async (req, res) => {
     }
 
     const { bucketName, path } = req.body;
-    console.log(bucketName, path);
 
     if (!bucketName) {
         return res.status(400).json({ message: 'bucketName is missing in request body.', status: 400 });

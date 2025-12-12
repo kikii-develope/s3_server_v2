@@ -150,6 +150,8 @@ router.post('/upload', upload.single('file'), uploadFileToWebDAV);
  *                         type: integer
  *                       url:
  *                         type: string
+ *                       msg:
+ *                         type: string
  *                 summary:
  *                   type: object
  *                   properties:
