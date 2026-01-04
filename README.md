@@ -178,3 +178,28 @@ npm run dev
 - 단일 파일 업로드: 파일 1개
 - 다중 파일 업로드: 최대 10개 파일
 - 파일 크기 제한: 5MB (multer 설정) 
+
+``` mermaid
+flowchart LR
+
+  A[Mobile App] -->|REST: POST /attendance/check-in| API[Attendance API Server]
+
+  API --> DB[(Attendance DB)]
+
+  
+
+  W[Web Admin/Portal] -->|REST: GET /attendance?date=...| API
+
+  API --> DB
+
+  
+
+  API --> LOG[(Logging/Monitoring)]
+
+  API --> AUTH[Auth: JWT/Session]
+
+  W --> AUTH
+
+  A --> AUTH
+
+```
