@@ -22,7 +22,7 @@ const app = express();
 //     ],
 //     credentials: true,  // 쿠키/인증 헤더 허용
 //     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-//     allowedHeaders: ['Content-Typeㄷ', 'Authorization', 'X-Requested-With']
+//     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 // };
 
 app.use('/swagger-ui.html', swaggerUi.serve, swaggerUi.setup(specs));
