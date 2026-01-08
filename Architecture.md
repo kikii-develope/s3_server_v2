@@ -217,3 +217,155 @@ WebDAV 서버에 새로운 디렉토리를 생성합니다.
   "path": "/uploads/2026/01/new-folder"
 }
 ```
+
+## 6. WebDAV 디렉토리 목록 조회
+
+### `GET /webdav/directory/{path}`
+
+WebDAV 서버의 디렉토리 내용을 조회합니다.
+
+---
+
+### Request
+
+#### Path Parameters
+
+| Name | Type | Required | Description |
+|---|---|---:|---|
+| `path` | `string` | ❌ | 조회할 디렉토리 경로 (`/` 포함 가능) |
+
+> `path`가 전달되지 않으면 기본 디렉토리를 조회하도록 서버 정책에 따릅니다.
+---
+
+### Response
+
+#### 200 OK
+
+```json
+{
+  "message": "디렉토리 조회 성공",
+  "status": 200,
+  "path": "/uploads/2026/01",
+  "directory": [
+    {
+      "name": "a.png",
+      "type": "file",
+      "size": 1111
+    },
+    {
+      "name": "sub-folder",
+      "type": "directory"
+    }
+  ]
+}
+```
+
+## S3 Upload API Specification
+
+### Base Information
+- Base Path: `/s3`
+- Supported Content Types
+  - `multipart/form-data`
+  - `application/json`
+- Upload Handling
+  - `multer.memoryStorage()` 사용
+- Max Files (Multiple Upload)
+  - 최대 10개
+
+---
+
+### 1. S3 단일 파일 업로드
+
+#### `POST /s3/upload`
+
+단일 파일을 지정한 S3 버킷에 업로드합니다.
+
+---
+
+#### Request
+
+- **Content-Type**: `multipart/form-data`
+
+#### Form Data
+
+| Field | Type | Required | Description |
+|---|---|---:|---|
+| `file` | `binary` | ✅ | 업로드할 파일 |
+| `bucketName` | `string` | ✅ | 업로드 대상 S3 버킷 이름 |
+
+``` json
+{
+  "message": "파일 업로드 성공",
+  "status": 200,
+  "object": {
+    "bucket": "my-s3-bucket",
+    "key": "sample.png",
+    "url": "https://my-s3-bucket.s3.amazonaws.com/sample.png",
+    "size": 12345
+  }
+}
+```
+
+
+#### Response
+
+**200 OK**
+
+```json
+{
+  "message": "파일 업로드 성공",
+  "status": 200,
+  "object": {
+    "bucket": "my-s3-bucket",
+    "key": "sample.png",
+    "url": "https://my-s3-bucket.s3.amazonaws.com/sample.png",
+    "size": 12345
+  }
+}
+```
+
+### 2. S3 다중 파일 업로드
+
+#### `POST /s3/upload/multiple`
+
+여러 파일을 지정한 S3 버킷의 특정 경로에 업로드합니다.  
+최대 **10개 파일**까지 업로드할 수 있습니다.
+
+---
+
+#### Request
+
+- **Content-Type**: `multipart/form-data`
+
+#### Form Data
+
+| Field | Type | Required | Description |
+|---|---|---:|---|
+| `files` | `binary[]` | ✅ | 업로드할 파일 목록 (최대 10개) |
+| `bucketName` | `string` | ✅ | 업로드 대상 S3 버킷 이름 |
+| `path` | `string` | ✅ | S3 버킷 내 업로드 경로 |
+
+#### Response 
+
+**200 OK**
+
+``` json
+{
+  "message": "파일 업로드 성공",
+  "status": 200,
+  "object": [
+    {
+      "bucket": "my-s3-bucket",
+      "key": "uploads/2026/01/a.png",
+      "url": "https://my-s3-bucket.s3.amazonaws.com/uploads/2026/01/a.png",
+      "size": 1111
+    },
+    {
+      "bucket": "my-s3-bucket",
+      "key": "uploads/2026/01/b.png",
+      "url": "https://my-s3-bucket.s3.amazonaws.com/uploads/2026/01/b.png",
+      "size": 2222
+    }
+  ]
+}
+```
