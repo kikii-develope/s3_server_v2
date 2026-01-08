@@ -1,5 +1,6 @@
 import cors from 'cors';
 import express from 'express';
+import type { Request, Response, NextFunction } from 'express'
 import 'dotenv/config.js'
 import { pkg } from './src/config/appInfo.js';
 import swaggerUi from 'swagger-ui-express';
@@ -21,7 +22,7 @@ const app = express();
 //     ],
 //     credentials: true,  // 쿠키/인증 헤더 허용
 //     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-//     allowedHeaders: ['Content-Typeㄷ', 'Authorization', 'X-Requested-With']
+//     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 // };
 
 app.use('/swagger-ui.html', swaggerUi.serve, swaggerUi.setup(specs));
@@ -32,7 +33,7 @@ app.use(express.json());
 
 app.use(express.urlencoded({ extended: true }));
 // 요청 패킷 정보를 로깅하는 미들웨어
-const requestLogger = (req, res, next) => {
+const requestLogger = (req: Request, res: Response, next: NextFunction) => {
     console.log('\n=== 요청 패킷 정보 ===');
     console.log('Method:', req.method);
     console.log('URL:', req.url);
@@ -46,17 +47,16 @@ const requestLogger = (req, res, next) => {
 };
 
 // 응답 패킷 정보를 로깅하는 미들웨어
-const responseLogger = (req, res, next) => {
-    const originalSend = res.send;
-    const originalJson = res.json;
+const responseLogger = (req: Request, res: Response, next: NextFunction) => {
+    const originalSend = res.send.bind(res);
+    const originalJson = res.json.bind(res);
 
     // 응답 시작 시간 기록
     const startTime = Date.now();
 
     // res.send 오버라이드
-    res.send = function (data) {
-        const endTime = Date.now();
-        const duration = endTime - startTime;
+    res.send = (data: any) => {
+        const duration = Date.now() - startTime;
 
         console.log('\n=== 응답 패킷 정보 ===');
         console.log('Status Code:', res.statusCode);
@@ -65,13 +65,12 @@ const responseLogger = (req, res, next) => {
         console.log('Response Data:', data);
         console.log('========================\n');
 
-        originalSend.call(this, data);
+        return originalSend(data);
     };
 
     // res.json 오버라이드
-    res.json = function (data) {
-        const endTime = Date.now();
-        const duration = endTime - startTime;
+    res.json = (data: any) => {
+        const duration = Date.now() - startTime;
 
         console.log('\n=== 응답 패킷 정보 ===');
         console.log('Status Code:', res.statusCode);
@@ -80,7 +79,7 @@ const responseLogger = (req, res, next) => {
         console.log('Response Data:', data);
         console.log('========================\n');
 
-        originalJson.call(this, data);
+        return originalJson(data);
     };
 
     next();

@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "typeRoots": ["./src/types", "./node_modules/@types"],
+    "target": "ES2020",
+    "module": "CommonJS",
+    "strict": false,
+    "allowJs": true,
+    "checkJs": false,
+    "outDir": "dist",
+    "esModuleInterop": true
+  },
+  "include": ["src", "src/types"]
+}
