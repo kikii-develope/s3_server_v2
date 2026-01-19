@@ -14,6 +14,9 @@ import {
 } from '../services/web_dav/webdavClient.js';
 import mime from 'mime-types';
 import { successResponse, errorResponse } from '../utils/response.js';
+import * as fileMetadataRepo from '../repositories/fileMetadataRepo.js';
+import * as fileHistoryRepo from '../repositories/fileHistoryRepo.js';
+import { generateEtag, compareHash, parseIfMatchHeader, formatEtagHeader } from '../utils/etag.js';
 
 /**
  * WebDAV 파일 업로드 컨트롤러
@@ -21,9 +24,8 @@ import { successResponse, errorResponse } from '../utils/response.js';
  * @param {Object} res - Express response 객체
  */
 export const uploadFileToWebDAV = async (req, res) => {
-
     try {
-        const { path, filename } = req.body;
+        const { path, filename, domain_type, domain_id, userId } = req.body;
         const file = req.file;
 
         if (!file) {
@@ -36,11 +38,54 @@ export const uploadFileToWebDAV = async (req, res) => {
 
         const result = await uploadSingle(path, file, filename);
 
+        if (!result.success) {
+            return errorResponse(res, result.error || '파일 업로드 실패', 500);
+        }
+
+        // 파일 정보 추출
+        const actualFilename = result.filename;
+        const extension = actualFilename.includes('.')
+            ? actualFilename.split('.').pop()?.toLowerCase()
+            : '';
+        const filePath = `${path}/${actualFilename}`;
+        const mimeType = file.mimetype || mime.lookup(extension) || 'application/octet-stream';
+
+        // ETag 생성
+        const etag = generateEtag(file.buffer);
+
+        // file_metadata INSERT
+        const metadata = await fileMetadataRepo.create({
+            domainType: domain_type || null,
+            domainId: domain_id ? parseInt(domain_id) : null,
+            filePath: filePath,
+            fileName: actualFilename,
+            extension: extension,
+            mimeType: mimeType,
+            fileSize: file.size,
+            contentHash: etag,
+            etag: etag,
+            status: 'ACTIVE'
+        });
+
+        // history 기록
+        await fileHistoryRepo.create({
+            fileMetadataId: metadata.id,
+            action: 'UPLOAD',
+            oldEtag: null,
+            newEtag: etag,
+            oldHash: null,
+            newHash: etag,
+            changedBy: userId || 'system'
+        });
+
+        res.set('ETag', formatEtagHeader(etag));
         return successResponse(res, 'WebDAV 파일 업로드 성공', {
-            path: `${getBaseUrl()}/${path}/${file.originalname}`,
+            path: `${getBaseUrl()}/${filePath}`,
             filename: result.filename,
             size: result.size,
-            url: result.url
+            url: result.url,
+            etag: etag,
+            metadataId: metadata.id
         });
 
     } catch (error) {
@@ -56,49 +101,67 @@ export const uploadFileToWebDAV = async (req, res) => {
  */
 export const downloadFileFromWebDAV = async (req, res) => {
     try {
-        // 경로 추출 (req.params.path 대신 req.params[0] 사용)
         const path = req.params[0] || req.params.path;
-
 
         if (!path) {
             return errorResponse(res, 'path가 필요합니다.', 400);
         }
 
-        // 상대경로를 전체 URL로 변환 (기존 전체 URL도 지원)
         const fullPath = path.includes(getBaseUrl())
             ? path
             : `${getBaseUrl()}/${path}`;
 
-        const file = await getFile(fullPath);
+        const fileBuffer = await getFile(fullPath);
 
-
-        if (!file) {
+        if (!fileBuffer) {
             return errorResponse(res, '파일이 없습니다.', 404);
         }
-
-
-        // 파일 정보를 JSON으로 반환 (Swagger에서 확인용)
 
         const filename = path.split('/').pop() || 'download';
         const extension = path.split('.').pop()?.toLowerCase();
 
+        // file_metadata 조회 또는 lazy 생성
+        let metadata = await fileMetadataRepo.findByFilePath(path);
+        let etag = null;
+
+        if (!metadata) {
+            // lazy INSERT (B-lite 스캔 전 또는 누락된 파일)
+            const mimeType = mime.lookup(extension) || 'application/octet-stream';
+            etag = generateEtag(fileBuffer);
+
+            metadata = await fileMetadataRepo.create({
+                filePath: path,
+                fileName: filename,
+                extension: extension || '',
+                mimeType: mimeType,
+                fileSize: fileBuffer.length,
+                etag: etag,
+                status: 'ACTIVE'
+            });
+        } else if (!metadata.etag) {
+            // ETag가 없으면 lazy 생성
+            etag = generateEtag(fileBuffer);
+            await fileMetadataRepo.updateEtag(metadata.id, etag);
+        } else {
+            etag = metadata.etag;
+        }
+
         // 파일 타입별 처리
-        let fileContent = '';
         let contentType = mime.lookup(extension) || 'application/octet-stream';
         let contentDisposition = req.query.disposition || 'inline';
 
         if (['txt', 'json', 'xml', 'html', 'css', 'js'].includes(extension)) {
-            fileContent = file.toString('utf8');
             contentType = 'text/plain';
         }
 
         res.set({
             'Content-Type': contentType,
             'Content-Disposition': `${contentDisposition}; filename*=UTF-8''${encodeURIComponent(filename)}`,
-            'Content-Length': file.length,
+            'Content-Length': fileBuffer.length,
             'Cache-Control': 'no-store',
+            'ETag': formatEtagHeader(etag)
         });
-        return res.status(200).send(file);
+        return res.status(200).send(fileBuffer);
 
     } catch (error) {
         console.error('WebDAV 다운로드 에러:', error);
@@ -244,6 +307,7 @@ export const updateFileInWebDAV = async (req, res) => {
     try {
         const filePath = req.params[0] || req.params.path;
         const file = req.file;
+        const { userId } = req.body;
 
         if (!file) {
             return errorResponse(res, '파일이 없습니다.', 400);
@@ -253,10 +317,15 @@ export const updateFileInWebDAV = async (req, res) => {
             return errorResponse(res, 'path가 필요합니다.', 400);
         }
 
+        if (!userId) {
+            return errorResponse(res, 'userId가 필요합니다.', 400);
+        }
+
         // 경로에서 디렉토리와 파일명 분리
         const pathParts = filePath.split('/');
         let filename = pathParts.pop();
         const directoryPath = pathParts.join('/');
+        const normalizedFilePath = directoryPath ? `${directoryPath}/${filename}` : filename;
 
         // 확장자 추출
         let originalExtension = filename.includes('.')
@@ -268,14 +337,12 @@ export const updateFileInWebDAV = async (req, res) => {
             const searchPath = directoryPath ? `/${directoryPath}` : '/';
             const contents = await getDirectoryContents(searchPath);
             if (contents) {
-                // 1. 확장자 포함된 파일 찾기 (예: 스마트체크로고.png)
                 let matchedFile = contents.find(item =>
                     item.type === 'file' &&
                     item.basename.includes('.') &&
                     item.basename.split('.').slice(0, -1).join('.').normalize('NFKC') === filename.normalize('NFKC')
                 );
 
-                // 2. 확장자 없는 파일 찾기 (예: 스마트체크로고)
                 if (!matchedFile) {
                     matchedFile = contents.find(item =>
                         item.type === 'file' &&
@@ -296,6 +363,9 @@ export const updateFileInWebDAV = async (req, res) => {
             }
         }
 
+        // 실제 파일 경로 (확장자 포함)
+        const actualFilePath = directoryPath ? `${directoryPath}/${filename}` : filename;
+
         // MIME 타입 검증
         const originalMime = originalExtension ? mime.lookup(originalExtension) : null;
         const uploadMime = file.mimetype;
@@ -304,13 +374,112 @@ export const updateFileInWebDAV = async (req, res) => {
             return errorResponse(res, `파일 타입이 다릅니다. 기존: ${originalMime}, 업로드: ${uploadMime}. 삭제 후 새로 업로드해주세요.`, 409);
         }
 
+        // file_metadata 조회
+        let metadata = await fileMetadataRepo.findByFilePath(actualFilePath);
+
+        // 기존 파일 내용 조회 (ETag lazy 생성용)
+        const fullPath = `${getBaseUrl()}/${actualFilePath}`;
+        const existingFileBuffer = await getFile(fullPath);
+
+        if (!existingFileBuffer) {
+            return errorResponse(res, '파일을 찾을 수 없습니다.', 404);
+        }
+
+        // metadata가 없으면 lazy 생성 후 428 반환
+        if (!metadata) {
+            const currentEtag = generateEtag(existingFileBuffer);
+            const mimeType = mime.lookup(originalExtension) || 'application/octet-stream';
+
+            metadata = await fileMetadataRepo.create({
+                filePath: actualFilePath,
+                fileName: filename,
+                extension: originalExtension || '',
+                mimeType: mimeType,
+                fileSize: existingFileBuffer.length,
+                etag: currentEtag,
+                contentHash: currentEtag,
+                status: 'ACTIVE'
+            });
+
+            res.set('ETag', formatEtagHeader(currentEtag));
+            return errorResponse(res, 'If-Match 헤더가 필요합니다. ETag를 확인 후 재요청해주세요.', 428, {
+                etag: currentEtag
+            });
+        }
+
+        // ETag가 없으면 lazy 생성 후 428 반환
+        if (!metadata.etag) {
+            const currentEtag = generateEtag(existingFileBuffer);
+            await fileMetadataRepo.updateEtagAndHash(metadata.id, currentEtag, currentEtag);
+
+            res.set('ETag', formatEtagHeader(currentEtag));
+            return errorResponse(res, 'If-Match 헤더가 필요합니다. ETag를 확인 후 재요청해주세요.', 428, {
+                etag: currentEtag
+            });
+        }
+
+        // If-Match 헤더 체크
+        const ifMatch = parseIfMatchHeader(req.headers['if-match']);
+        if (!ifMatch) {
+            res.set('ETag', formatEtagHeader(metadata.etag));
+            return errorResponse(res, 'If-Match 헤더가 필요합니다.', 428, {
+                etag: metadata.etag
+            });
+        }
+
+        // ETag 비교
+        if (!compareHash(ifMatch, metadata.etag)) {
+            res.set('ETag', formatEtagHeader(metadata.etag));
+            return errorResponse(res, '파일이 변경되었습니다. 최신 버전을 다시 받아주세요.', 412, {
+                etag: metadata.etag
+            });
+        }
+
+        // 새 파일 해시 계산
+        const newHash = generateEtag(file.buffer);
+        const oldHash = metadata.content_hash || generateEtag(existingFileBuffer);
+
+        // 콘텐츠 해시 비교 (동일하면 업데이트 불필요)
+        if (compareHash(oldHash, newHash)) {
+            res.set('ETag', formatEtagHeader(metadata.etag));
+            return successResponse(res, '파일이 동일하여 변경 없음', {
+                path: actualFilePath,
+                filename: filename,
+                etag: metadata.etag,
+                changed: false
+            });
+        }
+
+        // 파일 업데이트 실행
         const { res: result, file: f } = await updateFile(directoryPath, file, filename);
 
+        // metadata 업데이트
+        const oldEtag = metadata.etag;
+        await fileMetadataRepo.updateFileInfo(metadata.id, {
+            fileSize: file.size,
+            contentHash: newHash,
+            etag: newHash
+        });
+
+        // history 기록
+        await fileHistoryRepo.create({
+            fileMetadataId: metadata.id,
+            action: 'UPDATE',
+            oldEtag: oldEtag,
+            newEtag: newHash,
+            oldHash: oldHash,
+            newHash: newHash,
+            changedBy: userId
+        });
+
+        res.set('ETag', formatEtagHeader(newHash));
         return successResponse(res, '파일 업데이트 성공', {
-            path: filePath,
+            path: actualFilePath,
             filename: f.originalname,
             size: f.size,
-            url: `${getBaseUrl()}/${directoryPath}/${f.originalname}`
+            url: `${getBaseUrl()}/${directoryPath}/${f.originalname}`,
+            etag: newHash,
+            changed: true
         });
 
     } catch (error) {
@@ -332,12 +501,32 @@ export const updateFileInWebDAV = async (req, res) => {
 export const deleteFileFromWebDAV = async (req, res) => {
     try {
         const filePath = req.params[0] || req.params.path;
+        const userId = req.query.userId;
 
         if (!filePath) {
             return errorResponse(res, 'path가 필요합니다.', 400);
         }
 
+        // 실제 파일 삭제
         await deleteFile(filePath);
+
+        // file_metadata 상태 변경 (논리 삭제)
+        const metadata = await fileMetadataRepo.findByFilePath(filePath);
+
+        if (metadata) {
+            await fileMetadataRepo.updateStatus(metadata.id, 'DELETED');
+
+            // history 기록
+            await fileHistoryRepo.create({
+                fileMetadataId: metadata.id,
+                action: 'DELETE',
+                oldEtag: metadata.etag,
+                newEtag: null,
+                oldHash: metadata.content_hash,
+                newHash: null,
+                changedBy: userId || 'system'
+            });
+        }
 
         return successResponse(res, '파일 삭제 성공', { path: filePath });
 
