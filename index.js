@@ -6,6 +6,7 @@ import swaggerUi from 'swagger-ui-express';
 import { specs } from './src/config/swagger.js';
 import s3Routes from './src/router/s3Routes.js';
 import webDavRoutes from "./src/router/webDavRoutes.js";
+import { testConnection } from './src/config/database.js';
 
 const app = express();
 
@@ -119,7 +120,8 @@ app.use('/s3', s3Routes);
 
 const PORT_NUM = process.env.PORT || 8989;
 
-app.listen(PORT_NUM, () => {
+app.listen(PORT_NUM, async () => {
     console.log('Server is running on port ' + PORT_NUM);
     console.log("app version: " + pkg.version);
+    await testConnection();
 }); 
