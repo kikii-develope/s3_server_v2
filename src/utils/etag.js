@@ -10,12 +10,23 @@ export const calculateHash = (buffer) => {
 };
 
 /**
- * ETag 생성 (SHA-256 기반)
- * @param {Buffer} buffer - 파일 버퍼
+ * ETag 생성 (v1-contentHash 형식)
+ * @param {string} contentHash - 콘텐츠 해시
  * @returns {string} ETag 값
  */
-export const generateEtag = (buffer) => {
-    return calculateHash(buffer);
+export const generateEtag = (contentHash) => {
+    return `v1-${contentHash}`;
+};
+
+/**
+ * ETag에서 content_hash 추출
+ * @param {string} etag - ETag 값 (v1-xxx 형식)
+ * @returns {string|null} content_hash
+ */
+export const extractHashFromEtag = (etag) => {
+    if (!etag) return null;
+    const match = etag.match(/^v\d+-(.+)$/);
+    return match ? match[1] : etag;
 };
 
 /**
