@@ -16,6 +16,7 @@ import mime from 'mime-types';
 import { successResponse, errorResponse } from '../utils/response.js';
 import * as fileMetadataRepo from '../repositories/fileMetadataRepo.js';
 import * as fileHistoryRepo from '../repositories/fileHistoryRepo.js';
+import pool from '../config/database.js';
 import { calculateHash, generateEtag, compareHash, parseIfMatchHeader, formatEtagHeader } from '../utils/etag.js';
 
 /**
@@ -662,6 +663,77 @@ export const copyFileInWebDAV = async (req, res) => {
             return errorResponse(res, '대상이 이미 존재합니다.', 409);
         }
 
+        return errorResponse(res, error.message);
+    }
+};
+
+/**
+ * 시스템 통계 조회 컨트롤러
+ * @param {Object} req - Express request 객체
+ * @param {Object} res - Express response 객체
+ */
+export const getWebDAVStats = async (req, res) => {
+    try {
+        // file_metadata 요약
+        const [summaryRows] = await pool.execute(`
+            SELECT
+                COUNT(*) as totalFiles,
+                SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) as activeFiles,
+                SUM(CASE WHEN status = 'DELETED' THEN 1 ELSE 0 END) as deletedFiles,
+                SUM(CASE WHEN status = 'DESYNC' THEN 1 ELSE 0 END) as desyncFiles,
+                SUM(CASE WHEN status = 'MISSING' THEN 1 ELSE 0 END) as missingFiles
+            FROM file_metadata
+        `);
+
+        // history 액션별 통계
+        const [historyRows] = await pool.execute(`
+            SELECT action, COUNT(*) as count
+            FROM file_metadata_history
+            GROUP BY action
+        `);
+
+        // 사용자별 통계
+        const [userRows] = await pool.execute(`
+            SELECT changed_by, COUNT(*) as count
+            FROM file_metadata_history
+            GROUP BY changed_by
+            ORDER BY count DESC
+            LIMIT 10
+        `);
+
+        // 최근 7일 일별 통계
+        const [dailyRows] = await pool.execute(`
+            SELECT
+                DATE(created_at) as date,
+                action,
+                COUNT(*) as count
+            FROM file_metadata_history
+            WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+            GROUP BY DATE(created_at), action
+            ORDER BY date DESC
+        `);
+
+        // history를 객체로 변환
+        const historyStats = {};
+        historyRows.forEach(row => {
+            historyStats[row.action] = row.count;
+        });
+
+        // user를 객체로 변환
+        const userStats = {};
+        userRows.forEach(row => {
+            userStats[row.changed_by] = row.count;
+        });
+
+        return successResponse(res, '통계 조회 성공', {
+            summary: summaryRows[0],
+            stats: historyStats,
+            byUser: userStats,
+            daily: dailyRows
+        });
+
+    } catch (error) {
+        console.error('통계 조회 에러:', error);
         return errorResponse(res, error.message);
     }
 };

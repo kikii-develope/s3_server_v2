@@ -32,6 +32,9 @@ app.use(cors());
 app.use(express.json());
 
 app.use(express.urlencoded({ extended: true }));
+
+// 정적 파일 서빙 (테스트 대시보드)
+app.use('/public', express.static('public'));
 // 요청 패킷 정보를 로깅하는 미들웨어
 const requestLogger = (req, res, next) => {
     console.log('\n=== 요청 패킷 정보 ===');

@@ -11,7 +11,8 @@ import {
     deleteFileFromWebDAV,
     deleteDirectoryFromWebDAV,
     moveFileInWebDAV,
-    copyFileInWebDAV
+    copyFileInWebDAV,
+    getWebDAVStats
 } from '../controller/webdavController.js';
 
 const router = express.Router();
@@ -566,5 +567,39 @@ router.put('/move', moveFileInWebDAV);
  */
 router.put('/copy', copyFileInWebDAV);
 
+/**
+ * @swagger
+ * /webdav/stats:
+ *   get:
+ *     summary: ETag 시스템 통계 조회
+ *     description: 파일 메타데이터 히스토리에서 ETag 시스템 효율성 통계를 조회합니다
+ *     tags: [WebDAV]
+ *     responses:
+ *       200:
+ *         description: 통계 조회 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     total:
+ *                       type: integer
+ *                     upload:
+ *                       type: integer
+ *                     update:
+ *                       type: integer
+ *                     delete:
+ *                       type: integer
+ *                     skip:
+ *                       type: integer
+ *       500:
+ *         description: 서버 오류
+ */
+router.get('/stats', getWebDAVStats);
 
 export default router; 
