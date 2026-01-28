@@ -55,7 +55,7 @@ export const uploadFile = async (path, file, filename) => {
 
   file.originalname = filename;
 
-  const fullPath = `/${path}/${filename}`;
+  const fullPath = `/www/${path}/${filename}`;
   try {
     const res = await client.putFileContents(fullPath, file.buffer);
 
@@ -73,7 +73,7 @@ export const uploadFile = async (path, file, filename) => {
  */
 export const createDirectory = async (path) => {
   try {
-    await client.createDirectory(`/${path}`);
+    await client.createDirectory(`/www/${path}`);
   } catch (error) {
     console.error(error);
     throw error;
@@ -88,7 +88,7 @@ export const uploadSingle = async (path, file, filename) => {
       filename: f.originalname,
       success: true,
       size: f.size,
-      url: getBaseUrl() + `/${path}/${file.originalname}`
+      url: getBaseUrl() + `/www/${path}/${file.originalname}`
     };
   } catch (error) {
     return {
@@ -118,13 +118,13 @@ export const ensureDirectory = async (path) => {
 
 
     // 1) 이미 있으면 통과
-    const exists = await existDirectory(next);
+    const exists = await existDirectory(`/www${next.startsWith('/') ? '' : '/'}${next}`);
 
 
     if (!exists) {
       try {
 
-        await client.createDirectory(`/${next}`);
+        await client.createDirectory(`/www/${next}`);
       } catch (err) {
         // 경쟁 상태 혹은 서버별 응답 차이를 관용적으로 처리
         const code = err?.status || err?.statusCode;
@@ -253,7 +253,7 @@ export const uploadMultipleFilesParallel = async (path, files, filenames, concur
         }
 
 
-        const fullPath = getBaseUrl() + `/${path}/${filename}`;
+        const fullPath = getBaseUrl() + `/www/${path}/${filename}`;
 
         const existedFile = await getFile(fullPath);
 
@@ -262,7 +262,7 @@ export const uploadMultipleFilesParallel = async (path, files, filenames, concur
             filename: filename,
             success: true,
             size: existedFile.size,
-            url: getBaseUrl() + `/${path}/${filename}`,
+            url: getBaseUrl() + `/www/${path}/${filename}`,
             msg: "파일 존재, 요청을 생략합니다."
           }
         }
@@ -273,7 +273,7 @@ export const uploadMultipleFilesParallel = async (path, files, filenames, concur
           filename: f.originalname,
           success: true,
           size: f.size,
-          url: getBaseUrl() + `/${path}/${file.originalname}`,
+          url: getBaseUrl() + `/www/${path}/${file.originalname}`,
           msg: "신규 생성 완료"
         };
       } catch (error) {
@@ -297,7 +297,7 @@ export const uploadMultipleFilesParallel = async (path, files, filenames, concur
  * @param {string} path - 삭제할 파일 경로
  */
 export const deleteFile = async (path) => {
-  const fullPath = `/${path}`.normalize('NFKC');
+  const fullPath = `/www/${path}`.normalize('NFKC');
   try {
     await client.deleteFile(fullPath);
   } catch (error) {
@@ -311,7 +311,7 @@ export const deleteFile = async (path) => {
  * @param {string} path - 삭제할 디렉토리 경로
  */
 export const deleteDirectory = async (path) => {
-  const fullPath = `/${path}`.normalize('NFKC');
+  const fullPath = `/www/${path}`.normalize('NFKC');
   try {
     await client.deleteFile(fullPath);
   } catch (error) {
@@ -327,8 +327,8 @@ export const deleteDirectory = async (path) => {
  * @param {boolean} overwrite - 덮어쓰기 여부 (기본값: true)
  */
 export const moveFile = async (sourcePath, destPath, overwrite = true) => {
-  const src = `/${sourcePath}`.normalize('NFKC');
-  const dest = `/${destPath}`.normalize('NFKC');
+  const src = `/www/${sourcePath}`.normalize('NFKC');
+  const dest = `/www/${destPath}`.normalize('NFKC');
   try {
     await client.moveFile(src, dest, { overwrite });
   } catch (error) {
@@ -344,8 +344,8 @@ export const moveFile = async (sourcePath, destPath, overwrite = true) => {
  * @param {boolean} overwrite - 덮어쓰기 여부 (기본값: true)
  */
 export const copyFile = async (sourcePath, destPath, overwrite = true) => {
-  const src = `/${sourcePath}`.normalize('NFKC');
-  const dest = `/${destPath}`.normalize('NFKC');
+  const src = `/www/${sourcePath}`.normalize('NFKC');
+  const dest = `/www/${destPath}`.normalize('NFKC');
   try {
     await client.copyFile(src, dest, { overwrite });
   } catch (error) {
@@ -369,7 +369,7 @@ export const updateFile = async (path, file, filename) => {
 
   file.originalname = filename;
 
-  const fullPath = `/${path}/${filename}`.normalize('NFKC');
+  const fullPath = `/www/${path}/${filename}`.normalize('NFKC');
   try {
     const res = await client.putFileContents(fullPath, file.buffer, { overwrite: true });
     return { res, file };

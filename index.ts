@@ -32,10 +32,35 @@ app.use(cors());
 app.use(express.json());
 
 app.use(express.urlencoded({ extended: true }));
+// URL 디코딩 헬퍼 함수
+const decodeUrl = (url: string): string => {
+  try {
+    return decodeURIComponent(url);
+  } catch {
+    return url;
+  }
+};
+
+// HTTP 메서드별 아이콘
+const getMethodIcon = (method: string): string => {
+  const icons: Record<string, string> = {
+    GET: "📖",      // 조회
+    POST: "📤",     // 업로드/생성
+    PUT: "✏️",      // 업데이트
+    PATCH: "🔧",    // 부분 수정
+    DELETE: "🗑️",   // 삭제
+    OPTIONS: "⚙️",  // 옵션
+    HEAD: "🔍",     // 헤더 조회
+  };
+  return icons[method] || "📨";
+};
+
 // API 요청/응답 로깅 미들웨어
 const apiLogger = (req: Request, res: Response, next: NextFunction) => {
   const startTime = Date.now();
   const timestamp = new Date().toISOString();
+  const decodedUrl = decodeUrl(req.originalUrl);
+  const methodIcon = getMethodIcon(req.method);
 
   // 요청 로그
   console.log(
@@ -43,7 +68,7 @@ const apiLogger = (req: Request, res: Response, next: NextFunction) => {
   );
   console.log(`│ 📥 REQUEST  [${timestamp}]`);
   console.log("├─────────────────────────────────────────────────────────────");
-  console.log(`│ ${req.method} ${req.originalUrl}`);
+  console.log(`│ ${methodIcon} ${req.method} ${decodedUrl}`);
   console.log(`│ IP: ${req.ip || req.socket.remoteAddress}`);
   if (Object.keys(req.query).length > 0) {
     console.log(`│ Query: ${JSON.stringify(req.query)}`);
@@ -71,7 +96,7 @@ const apiLogger = (req: Request, res: Response, next: NextFunction) => {
     console.log(
       "├─────────────────────────────────────────────────────────────",
     );
-    console.log(`│ ${statusEmoji} ${req.method} ${req.originalUrl}`);
+    console.log(`│ ${statusEmoji} ${methodIcon} ${req.method} ${decodedUrl}`);
     console.log(`│ Status: ${res.statusCode} | Duration: ${duration}ms`);
     console.log(
       "└─────────────────────────────────────────────────────────────\n",

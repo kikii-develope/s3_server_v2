@@ -20,6 +20,39 @@ import pool from '../config/database.js';
 import { calculateHash, generateEtag, compareHash, parseIfMatchHeader, formatEtagHeader } from '../utils/etag.js';
 
 /**
+ * URL 또는 경로에서 실제 파일 경로만 추출
+ * @param {string} input - 전체 URL 또는 경로
+ * @returns {string} - /www/ 이후의 실제 경로
+ */
+const extractFilePath = (input) => {
+    if (!input) return input;
+
+    // URL인 경우 pathname 추출
+    if (input.startsWith('http://') || input.startsWith('https://')) {
+        try {
+            const url = new URL(input);
+            input = url.pathname;
+        } catch {
+            // URL 파싱 실패시 그대로 사용
+        }
+    }
+
+    // /www/로 시작하면 제거
+    if (input.startsWith('/www/')) {
+        input = input.slice(5); // '/www/' 제거
+    } else if (input.startsWith('/www')) {
+        input = input.slice(4); // '/www' 제거
+    }
+
+    // 앞의 슬래시 제거
+    if (input.startsWith('/')) {
+        input = input.slice(1);
+    }
+
+    return input;
+};
+
+/**
  * WebDAV 파일 업로드 컨트롤러
  * @param {Object} req - Express request 객체
  * @param {Object} res - Express response 객체
@@ -106,15 +139,16 @@ export const uploadFileToWebDAV = async (req, res) => {
  */
 export const downloadFileFromWebDAV = async (req, res) => {
     try {
-        const path = req.params[0] || req.params.path;
+        const rawPath = req.params[0] || req.params.path;
 
-        if (!path) {
+        if (!rawPath) {
             return errorResponse(res, 'path가 필요합니다.', 400);
         }
 
-        const fullPath = path.includes(getBaseUrl())
-            ? path
-            : `${getBaseUrl()}/${path}`;
+        // URL에서 실제 경로 추출
+        const filePath = extractFilePath(rawPath);
+
+        const fullPath = `${getBaseUrl()}/www/${filePath}`;
 
         const fileBuffer = await getFile(fullPath);
 
@@ -122,11 +156,11 @@ export const downloadFileFromWebDAV = async (req, res) => {
             return errorResponse(res, '파일이 없습니다.', 404);
         }
 
-        const filename = path.split('/').pop() || 'download';
-        const extension = path.split('.').pop()?.toLowerCase();
+        const filename = filePath.split('/').pop() || 'download';
+        const extension = filePath.split('.').pop()?.toLowerCase();
 
         // file_metadata 조회 또는 lazy 생성
-        let metadata = await fileMetadataRepo.findByFilePath(path);
+        let metadata = await fileMetadataRepo.findByFilePath(filePath);
         let etag = null;
 
         if (!metadata) {
@@ -136,7 +170,7 @@ export const downloadFileFromWebDAV = async (req, res) => {
             etag = generateEtag(contentHash);
 
             metadata = await fileMetadataRepo.create({
-                filePath: path,
+                filePath: filePath,
                 fileName: filename,
                 extension: extension || '',
                 mimeType: mimeType,
@@ -208,18 +242,18 @@ export const createWebDAVDirectory = async (req, res) => {
 export const getWebDAVDirectory = async (req, res) => {
     try {
         // 경로 추출 (req.params.path 대신 req.params[0] 사용)
-        const path = req.params[0] || req.params.path;
+        const rawPath = req.params[0] || req.params.path;
 
-        // URL 디코딩
-        const decodedPath = decodeURIComponent(path || '');
-
-        if (!decodedPath) {
+        if (!rawPath) {
             return errorResponse(res, 'path가 필요합니다.', 400);
         }
 
-        const directory = await existDirectory(decodedPath);
+        // URL에서 실제 경로 추출 및 디코딩
+        const dirPath = extractFilePath(decodeURIComponent(rawPath));
 
-        return successResponse(res, 'WebDAV 디렉토리 조회 성공', { path, directory });
+        const directory = await existDirectory(`/www/${dirPath}`);
+
+        return successResponse(res, 'WebDAV 디렉토리 조회 성공', { path: dirPath, directory });
 
     } catch (error) {
         console.error('WebDAV 디렉토리 조회 에러:', error);
@@ -313,7 +347,7 @@ export const uploadMultipleFilesToWebDAV = async (req, res) => {
  */
 export const updateFileInWebDAV = async (req, res) => {
     try {
-        const filePath = req.params[0] || req.params.path;
+        const rawPath = req.params[0] || req.params.path;
         const file = req.file;
         const { userId } = req.body;
 
@@ -321,9 +355,12 @@ export const updateFileInWebDAV = async (req, res) => {
             return errorResponse(res, '파일이 없습니다.', 400);
         }
 
-        if (!filePath) {
+        if (!rawPath) {
             return errorResponse(res, 'path가 필요합니다.', 400);
         }
+
+        // URL에서 실제 경로 추출
+        const filePath = extractFilePath(rawPath);
 
         if (!userId) {
             return errorResponse(res, 'userId가 필요합니다.', 400);
@@ -513,12 +550,15 @@ export const updateFileInWebDAV = async (req, res) => {
  */
 export const deleteFileFromWebDAV = async (req, res) => {
     try {
-        const filePath = req.params[0] || req.params.path;
+        const rawPath = req.params[0] || req.params.path;
         const userId = req.query.userId;
 
-        if (!filePath) {
+        if (!rawPath) {
             return errorResponse(res, 'path가 필요합니다.', 400);
         }
+
+        // URL에서 실제 경로 추출
+        const filePath = extractFilePath(rawPath);
 
         // 실제 파일 삭제
         await deleteFile(filePath);
@@ -561,16 +601,19 @@ export const deleteFileFromWebDAV = async (req, res) => {
  */
 export const deleteDirectoryFromWebDAV = async (req, res) => {
     try {
-        const dirPath = req.params[0] || req.params.path;
+        const rawPath = req.params[0] || req.params.path;
         const force = req.query.force === 'true';
 
-        if (!dirPath) {
+        if (!rawPath) {
             return errorResponse(res, 'path가 필요합니다.', 400);
         }
 
+        // URL에서 실제 경로 추출
+        const dirPath = extractFilePath(rawPath);
+
         // force가 false일 때 디렉토리 내용 확인
         if (!force) {
-            const contents = await getDirectoryContents(`/${dirPath}`);
+            const contents = await getDirectoryContents(`/www/${dirPath}`);
 
             if (contents && contents.length > 0) {
                 return errorResponse(res, '디렉토리 내부에 파일이 있습니다. 삭제하려면 force=true를 사용하세요.', 409, {
@@ -605,15 +648,19 @@ export const deleteDirectoryFromWebDAV = async (req, res) => {
  */
 export const moveFileInWebDAV = async (req, res) => {
     try {
-        const { sourcePath, destPath, overwrite = true } = req.body;
+        const { sourcePath: rawSourcePath, destPath: rawDestPath, overwrite = true } = req.body;
 
-        if (!sourcePath) {
+        if (!rawSourcePath) {
             return errorResponse(res, 'sourcePath가 필요합니다.', 400);
         }
 
-        if (!destPath) {
+        if (!rawDestPath) {
             return errorResponse(res, 'destPath가 필요합니다.', 400);
         }
+
+        // URL에서 실제 경로 추출
+        const sourcePath = extractFilePath(rawSourcePath);
+        const destPath = extractFilePath(rawDestPath);
 
         await moveFile(sourcePath, destPath, overwrite);
 
@@ -641,15 +688,19 @@ export const moveFileInWebDAV = async (req, res) => {
  */
 export const copyFileInWebDAV = async (req, res) => {
     try {
-        const { sourcePath, destPath, overwrite = true } = req.body;
+        const { sourcePath: rawSourcePath, destPath: rawDestPath, overwrite = true } = req.body;
 
-        if (!sourcePath) {
+        if (!rawSourcePath) {
             return errorResponse(res, 'sourcePath가 필요합니다.', 400);
         }
 
-        if (!destPath) {
+        if (!rawDestPath) {
             return errorResponse(res, 'destPath가 필요합니다.', 400);
         }
+
+        // URL에서 실제 경로 추출
+        const sourcePath = extractFilePath(rawSourcePath);
+        const destPath = extractFilePath(rawDestPath);
 
         await copyFile(sourcePath, destPath, overwrite);
 
