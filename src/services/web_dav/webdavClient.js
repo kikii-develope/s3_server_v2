@@ -4,11 +4,12 @@ import https from 'https';
 import { v4 as uuidv4 } from 'uuid';
 import { decodePathTwiceToNFC, decodePathTwiceToNFKC } from "../../utils/decoder.js";
 
-const ca = fs.readFileSync('local.crt');
-const agent = new https.Agent({
-  ca: ca,
-  rejectUnauthorized: true
-});
+// SSL 인증서 설정 (필요시 주석 해제)
+// const ca = fs.readFileSync('local.crt');
+// const agent = new https.Agent({
+//   ca: ca,
+//   rejectUnauthorized: true
+// });
 
 const webdavUrl = process.env.WEBDAV_URL;
 
@@ -54,7 +55,7 @@ export const uploadFile = async (path, file, filename) => {
 
   file.originalname = filename;
 
-  const fullPath = `www/${path}/${filename}`;
+  const fullPath = `/${path}/${filename}`;
   try {
     const res = await client.putFileContents(fullPath, file.buffer);
 
@@ -72,7 +73,7 @@ export const uploadFile = async (path, file, filename) => {
  */
 export const createDirectory = async (path) => {
   try {
-    await client.createDirectory(`/www/${path}`);
+    await client.createDirectory(`/${path}`);
   } catch (error) {
     console.error(error);
     throw error;
@@ -87,7 +88,7 @@ export const uploadSingle = async (path, file, filename) => {
       filename: f.originalname,
       success: true,
       size: f.size,
-      url: getBaseUrl() + `/www/${path}/${file.originalname}`
+      url: getBaseUrl() + `/${path}/${file.originalname}`
     };
   } catch (error) {
     return {
@@ -123,7 +124,7 @@ export const ensureDirectory = async (path) => {
     if (!exists) {
       try {
 
-        await client.createDirectory(`/www/${next}`);
+        await client.createDirectory(`/${next}`);
       } catch (err) {
         // 경쟁 상태 혹은 서버별 응답 차이를 관용적으로 처리
         const code = err?.status || err?.statusCode;
@@ -252,7 +253,7 @@ export const uploadMultipleFilesParallel = async (path, files, filenames, concur
         }
 
 
-        const fullPath = getBaseUrl() + `/www/${path}/${filename}`;
+        const fullPath = getBaseUrl() + `/${path}/${filename}`;
 
         const existedFile = await getFile(fullPath);
 
@@ -261,7 +262,7 @@ export const uploadMultipleFilesParallel = async (path, files, filenames, concur
             filename: filename,
             success: true,
             size: existedFile.size,
-            url: getBaseUrl() + `/www/${path}/${filename}`,
+            url: getBaseUrl() + `/${path}/${filename}`,
             msg: "파일 존재, 요청을 생략합니다."
           }
         }
@@ -272,7 +273,7 @@ export const uploadMultipleFilesParallel = async (path, files, filenames, concur
           filename: f.originalname,
           success: true,
           size: f.size,
-          url: getBaseUrl() + `/www/${path}/${file.originalname}`,
+          url: getBaseUrl() + `/${path}/${file.originalname}`,
           msg: "신규 생성 완료"
         };
       } catch (error) {
@@ -290,3 +291,90 @@ export const uploadMultipleFilesParallel = async (path, files, filenames, concur
 
   return results;
 };
+
+/**
+ * 파일 삭제
+ * @param {string} path - 삭제할 파일 경로
+ */
+export const deleteFile = async (path) => {
+  const fullPath = `/${path}`.normalize('NFKC');
+  try {
+    await client.deleteFile(fullPath);
+  } catch (error) {
+    console.error('파일 삭제 실패:', error);
+    throw error;
+  }
+}
+
+/**
+ * 디렉토리 삭제
+ * @param {string} path - 삭제할 디렉토리 경로
+ */
+export const deleteDirectory = async (path) => {
+  const fullPath = `/${path}`.normalize('NFKC');
+  try {
+    await client.deleteFile(fullPath);
+  } catch (error) {
+    console.error('디렉토리 삭제 실패:', error);
+    throw error;
+  }
+}
+
+/**
+ * 파일/디렉토리 이동
+ * @param {string} sourcePath - 원본 경로
+ * @param {string} destPath - 대상 경로
+ * @param {boolean} overwrite - 덮어쓰기 여부 (기본값: true)
+ */
+export const moveFile = async (sourcePath, destPath, overwrite = true) => {
+  const src = `/${sourcePath}`.normalize('NFKC');
+  const dest = `/${destPath}`.normalize('NFKC');
+  try {
+    await client.moveFile(src, dest, { overwrite });
+  } catch (error) {
+    console.error('파일 이동 실패:', error);
+    throw error;
+  }
+}
+
+/**
+ * 파일/디렉토리 복사
+ * @param {string} sourcePath - 원본 경로
+ * @param {string} destPath - 대상 경로
+ * @param {boolean} overwrite - 덮어쓰기 여부 (기본값: true)
+ */
+export const copyFile = async (sourcePath, destPath, overwrite = true) => {
+  const src = `/${sourcePath}`.normalize('NFKC');
+  const dest = `/${destPath}`.normalize('NFKC');
+  try {
+    await client.copyFile(src, dest, { overwrite });
+  } catch (error) {
+    console.error('파일 복사 실패:', error);
+    throw error;
+  }
+}
+
+/**
+ * 파일 업데이트 (덮어쓰기)
+ * @param {string} path - 파일 경로 (디렉토리)
+ * @param {Object} file - 업로드할 파일 객체
+ * @param {string} filename - 파일명
+ */
+export const updateFile = async (path, file, filename) => {
+  filename = filename.replace(/ /g, "_");
+
+  if (path.startsWith("/")) {
+    path = path.replace("/", "");
+  }
+
+  file.originalname = filename;
+
+  const fullPath = `/${path}/${filename}`.normalize('NFKC');
+  try {
+    const res = await client.putFileContents(fullPath, file.buffer, { overwrite: true });
+    return { res, file };
+  } catch (error) {
+    console.error('파일 업데이트 실패:', error);
+    throw error;
+  }
+}
