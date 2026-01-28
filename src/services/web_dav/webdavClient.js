@@ -173,6 +173,9 @@ export const getFileFromDirectory = async (directoryPath, fileName) => {
     // 디렉토리에서 특정 파일 찾기
     const directoryContents = await getDirectoryContents(directoryPath);
 
+    if (!directoryContents) {
+      throw new Error(`디렉토리를 찾을 수 없습니다: ${directoryPath}`);
+    }
 
     const targetFile = directoryContents.find(item => {
 

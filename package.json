@@ -2,11 +2,11 @@
   "name": "file_uploader",
   "version": "1.2.0",
   "description": "S3 file upload server",
-  "main": "index.js",
+  "main": "index.ts",
   "type": "module",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js",
+    "start": "tsx index.ts",
+    "dev": "tsx watch index.ts",
     "docker:dev": "docker-compose -f docker-compose.dev.yml up --build",
     "docker:dev:detach": "docker-compose -f docker-compose.dev.yml up -d --build",
     "docker:prod": "docker-compose -f docker-compose.prod.yml up --build",
@@ -36,6 +36,7 @@
     "@types/node": "^25.0.1",
     "@types/swagger-ui-express": "^4.1.8",
     "nodemon": "^3.0.3",
+    "tsx": "^4.19.0",
     "typescript": "^5.9.3"
   },
   "author": "inseok lee",

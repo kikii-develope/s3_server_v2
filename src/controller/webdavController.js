@@ -26,7 +26,10 @@ export const uploadFileToWebDAV = async (req, res) => {
             });
         }
 
-        const result = await uploadSingle(path, file, filename);
+        // filename이 없으면 file.originalname 사용
+        const uploadFilename = filename || file.originalname;
+
+        const result = await uploadSingle(path, file, uploadFilename);
 
         return res.status(200).json({
             message: 'WebDAV 파일 업로드 성공',
