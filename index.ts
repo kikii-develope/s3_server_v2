@@ -1,11 +1,13 @@
-import cors from 'cors';
-import express from 'express';
-import type { Request, Response, NextFunction } from 'express'
-import 'dotenv/config.js'
-import { pkg } from './src/config/appInfo.js';
-import swaggerUi from 'swagger-ui-express';
-import { specs } from './src/config/swagger.js';
-import s3Routes from './src/router/s3Routes.js';
+import cors from "cors";
+import express from "express";
+import type { Request, Response, NextFunction } from "express";
+if (process.env.NODE_ENV === "development") {
+  await import("dotenv/config.js");
+}
+import { pkg } from "./src/config/appInfo.js";
+import swaggerUi from "swagger-ui-express";
+import { specs } from "./src/config/swagger.js";
+import s3Routes from "./src/router/s3Routes.js";
 import webDavRoutes from "./src/router/webDavRoutes.js";
 
 const app = express();
@@ -25,64 +27,85 @@ const app = express();
 //     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 // };
 
-app.use('/swagger-ui.html', swaggerUi.serve, swaggerUi.setup(specs));
+app.use("/swagger-ui.html", swaggerUi.serve, swaggerUi.setup(specs));
 
 app.use(cors());
 
 app.use(express.json());
 
 app.use(express.urlencoded({ extended: true }));
-// 요청 패킷 정보를 로깅하는 미들웨어
-const requestLogger = (req: Request, res: Response, next: NextFunction) => {
-    console.log('\n=== 요청 패킷 정보 ===');
-    console.log('Method:', req.method);
-    console.log('URL:', req.url);
-    console.log('Headers:', req.headers);
-    console.log('Query:', req.query);
-    console.log('Body:', req.body);
-    console.log('File:', req.file);
-    console.log('Files:', req.files);
-    console.log('=====================\n');
-    next();
+// URL 디코딩 헬퍼 함수
+const decodeUrl = (url: string): string => {
+  try {
+    return decodeURIComponent(url);
+  } catch {
+    return url;
+  }
 };
 
-// 응답 패킷 정보를 로깅하는 미들웨어
-const responseLogger = (req: Request, res: Response, next: NextFunction) => {
-    const originalSend = res.send.bind(res);
-    const originalJson = res.json.bind(res);
+// HTTP 메서드별 아이콘
+const getMethodIcon = (method: string): string => {
+  const icons: Record<string, string> = {
+    GET: "📖", // 조회
+    POST: "📤", // 업로드/생성
+    PUT: "✏️", // 업데이트
+    PATCH: "🔧", // 부분 수정
+    DELETE: "🗑️", // 삭제
+    OPTIONS: "⚙️", // 옵션
+    HEAD: "🔍", // 헤더 조회
+  };
+  return icons[method] || "📨";
+};
 
-    // 응답 시작 시간 기록
-    const startTime = Date.now();
+// API 요청/응답 로깅 미들웨어
+const apiLogger = (req: Request, res: Response, next: NextFunction) => {
+  const startTime = Date.now();
+  const timestamp = new Date().toISOString();
+  const decodedUrl = decodeUrl(req.originalUrl);
+  const methodIcon = getMethodIcon(req.method);
 
-    // res.send 오버라이드
-    res.send = (data: any) => {
-        const duration = Date.now() - startTime;
+  // 요청 로그
+  console.log(
+    "\n┌─────────────────────────────────────────────────────────────",
+  );
+  console.log(`│ 📥 REQUEST  [${timestamp}]`);
+  console.log("├─────────────────────────────────────────────────────────────");
+  console.log(`│ ${methodIcon} ${req.method} ${decodedUrl}`);
+  console.log(`│ IP: ${req.ip || req.socket.remoteAddress}`);
+  if (Object.keys(req.query).length > 0) {
+    console.log(`│ Query: ${JSON.stringify(req.query)}`);
+  }
+  if (req.body && Object.keys(req.body).length > 0) {
+    console.log(`│ Body: ${JSON.stringify(req.body)}`);
+  }
+  if (req.file) {
+    console.log(`│ File: ${req.file.originalname} (${req.file.size} bytes)`);
+  }
+  if (req.files && Array.isArray(req.files) && req.files.length > 0) {
+    console.log(`│ Files: ${req.files.map((f) => f.originalname).join(", ")}`);
+  }
+  console.log("└─────────────────────────────────────────────────────────────");
 
-        console.log('\n=== 응답 패킷 정보 ===');
-        console.log('Status Code:', res.statusCode);
-        console.log('Headers:', res.getHeaders());
-        console.log('Duration:', duration + 'ms');
-        console.log('Response Data:', data);
-        console.log('========================\n');
+  // 응답 완료 시 로그
+  res.on("finish", () => {
+    const duration = Date.now() - startTime;
+    const statusEmoji = res.statusCode >= 400 ? "❌" : "✅";
 
-        return originalSend(data);
-    };
+    console.log(
+      "\n┌─────────────────────────────────────────────────────────────",
+    );
+    console.log(`│ 📤 RESPONSE [${new Date().toISOString()}]`);
+    console.log(
+      "├─────────────────────────────────────────────────────────────",
+    );
+    console.log(`│ ${statusEmoji} ${methodIcon} ${req.method} ${decodedUrl}`);
+    console.log(`│ Status: ${res.statusCode} | Duration: ${duration}ms`);
+    console.log(
+      "└─────────────────────────────────────────────────────────────\n",
+    );
+  });
 
-    // res.json 오버라이드
-    res.json = (data: any) => {
-        const duration = Date.now() - startTime;
-
-        console.log('\n=== 응답 패킷 정보 ===');
-        console.log('Status Code:', res.statusCode);
-        console.log('Headers:', res.getHeaders());
-        console.log('Duration:', duration + 'ms');
-        console.log('Response Data:', data);
-        console.log('========================\n');
-
-        return originalJson(data);
-    };
-
-    next();
+  next();
 };
 
 /**
@@ -104,21 +127,20 @@ const responseLogger = (req: Request, res: Response, next: NextFunction) => {
  *                   type: string
  *                   example: "Hello World"
  */
-app.get('/', (req, res) => {
-    res.json({
-        message: 'Hello World',
-    });
+app.get("/", (req, res) => {
+  res.json({
+    message: "Hello World",
+  });
 });
 
-app.use(requestLogger);  // 요청 로깅 미들웨어 추가
-// app.use(responseLogger); // 응답 로깅 미들웨어 추가
+app.use(apiLogger); // API 요청/응답 로깅
 
-app.use('/webdav', webDavRoutes);
-app.use('/s3', s3Routes);
+app.use("/webdav", webDavRoutes);
+app.use("/s3", s3Routes);
 
-const PORT_NUM = process.env.PORT || 8989;
+const PORT_NUM = process.env.PORT || 8000;
 
 app.listen(PORT_NUM, () => {
-    console.log('Server is running on port ' + PORT_NUM);
-    console.log("app version: " + pkg.version);
-}); 
+  console.log("Server is running on port " + PORT_NUM);
+  console.log("app version: " + pkg.version);
+});

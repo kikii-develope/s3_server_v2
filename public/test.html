@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebDAV ETag 테스트 대시보드</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { margin-bottom: 20px; color: #333; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; }
+        .card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .card h2 { font-size: 16px; color: #666; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 500; color: #555; }
+        .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+        .btn { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-warning { background: #ffc107; color: #333; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn:hover { opacity: 0.9; }
+        .result { margin-top: 15px; padding: 15px; background: #f8f9fa; border-radius: 4px; font-family: monospace; font-size: 13px; white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
+        .result.success { background: #d4edda; border: 1px solid #c3e6cb; }
+        .result.error { background: #f8d7da; border: 1px solid #f5c6cb; }
+        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+        .stat-item { background: #f8f9fa; padding: 15px; border-radius: 4px; text-align: center; }
+        .stat-value { font-size: 24px; font-weight: bold; color: #007bff; }
+        .stat-label { font-size: 12px; color: #666; margin-top: 5px; }
+        .etag-display { background: #e9ecef; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px; word-break: break-all; margin: 10px 0; }
+        .log { height: 200px; overflow-y: auto; background: #1e1e1e; color: #d4d4d4; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px; }
+        .log-entry { margin-bottom: 5px; }
+        .log-entry.success { color: #4ec9b0; }
+        .log-entry.error { color: #f14c4c; }
+        .log-entry.info { color: #569cd6; }
+        .test-scenario { background: #fff3cd; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 13px; }
+        .badge { display: inline-block; padding: 3px 8px; border-radius: 3px; font-size: 11px; font-weight: 500; }
+        .badge-success { background: #28a745; color: white; }
+        .badge-warning { background: #ffc107; color: #333; }
+        .badge-info { background: #17a2b8; color: white; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>WebDAV ETag 테스트 대시보드</h1>
+
+        <div class="grid">
+            <!-- 파일 업로드 테스트 -->
+            <div class="card">
+                <h2>1. 파일 업로드 (POST)</h2>
+                <div class="form-group">
+                    <label>경로</label>
+                    <input type="text" id="uploadPath" value="test" placeholder="예: test, www/images">
+                </div>
+                <div class="form-group">
+                    <label>파일</label>
+                    <input type="file" id="uploadFile">
+                </div>
+                <div class="form-group">
+                    <label>사용자 ID (옵셔널)</label>
+                    <input type="text" id="uploadUserId" value="tester">
+                </div>
+                <button class="btn btn-primary" onclick="uploadFile()">업로드</button>
+                <div id="uploadResult" class="result" style="display:none;"></div>
+            </div>
+
+            <!-- 파일 다운로드 테스트 -->
+            <div class="card">
+                <h2>2. 파일 다운로드 (GET)</h2>
+                <div class="form-group">
+                    <label>파일 경로</label>
+                    <input type="text" id="downloadPath" placeholder="예: test/myfile.txt">
+                </div>
+                <button class="btn btn-success" onclick="downloadFile()">다운로드 (ETag 확인)</button>
+                <div id="downloadResult" class="result" style="display:none;"></div>
+                <div id="currentEtag" class="etag-display" style="display:none;">
+                    <strong>현재 ETag:</strong> <span id="etagValue"></span>
+                </div>
+            </div>
+
+            <!-- 파일 업데이트 테스트 -->
+            <div class="card">
+                <h2>3. 파일 업데이트 (PUT)</h2>
+                <div class="test-scenario">
+                    <strong>테스트 시나리오:</strong><br>
+                    - If-Match 없이 요청 → 428<br>
+                    - 잘못된 ETag → 412<br>
+                    - 동일 파일 → 변경 없음<br>
+                    - 다른 파일 → 업데이트 성공
+                </div>
+                <div class="form-group">
+                    <label>파일 경로</label>
+                    <input type="text" id="updatePath" placeholder="예: test/myfile.txt">
+                </div>
+                <div class="form-group">
+                    <label>If-Match (ETag)</label>
+                    <input type="text" id="updateEtag" placeholder="v1-abc123...">
+                    <button class="btn btn-warning" style="margin-top:5px; padding:5px 10px; font-size:12px;" onclick="copyEtagToUpdate()">위에서 가져오기</button>
+                </div>
+                <div class="form-group">
+                    <label>파일</label>
+                    <input type="file" id="updateFile">
+                </div>
+                <div class="form-group">
+                    <label>사용자 ID</label>
+                    <input type="text" id="updateUserId" value="tester">
+                </div>
+                <button class="btn btn-warning" onclick="updateFile()">업데이트</button>
+                <div id="updateResult" class="result" style="display:none;"></div>
+            </div>
+
+            <!-- 자동 테스트 -->
+            <div class="card">
+                <h2>4. 자동 테스트 (ETag 효과 측정)</h2>
+                <div class="form-group">
+                    <label>테스트 횟수</label>
+                    <input type="number" id="testCount" value="10" min="1" max="100">
+                </div>
+                <button class="btn btn-danger" onclick="runAutoTest()">동일 파일 반복 업데이트 테스트</button>
+                <div class="stats-grid" style="margin-top:15px;">
+                    <div class="stat-item">
+                        <div class="stat-value" id="statTotal">0</div>
+                        <div class="stat-label">총 요청</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="statSkipped">0</div>
+                        <div class="stat-label">스킵 (동일 파일)</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="statSaved">0</div>
+                        <div class="stat-label">절감된 쓰기</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="statEfficiency">0%</div>
+                        <div class="stat-label">효율성</div>
+                    </div>
+                </div>
+                <div class="log" id="testLog"></div>
+            </div>
+
+            <!-- 통계 -->
+            <div class="card" style="grid-column: span 2;">
+                <h2>5. 시스템 통계</h2>
+                <button class="btn btn-primary" onclick="loadStats()">통계 새로고침</button>
+                <div class="stats-grid" style="margin-top:15px; grid-template-columns: repeat(4, 1fr);">
+                    <div class="stat-item">
+                        <div class="stat-value" id="statsUpload">-</div>
+                        <div class="stat-label">업로드 (UPLOAD)</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="statsUpdate">-</div>
+                        <div class="stat-label">업데이트 (UPDATE)</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="statsDelete">-</div>
+                        <div class="stat-label">삭제 (DELETE)</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="statsDesync">-</div>
+                        <div class="stat-label">불일치 (DESYNC)</div>
+                    </div>
+                </div>
+                <div id="statsResult" class="result" style="margin-top:15px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '';
+
+        // 파일 업로드
+        async function uploadFile() {
+            const path = document.getElementById('uploadPath').value;
+            const file = document.getElementById('uploadFile').files[0];
+            const userId = document.getElementById('uploadUserId').value;
+            const resultDiv = document.getElementById('uploadResult');
+
+            if (!file) {
+                showResult(resultDiv, '파일을 선택해주세요.', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('path', path);
+            formData.append('filename', file.name);
+            if (userId) formData.append('userId', userId);
+
+            try {
+                const res = await fetch(`${API_BASE}/webdav/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                const etag = res.headers.get('ETag');
+                showResult(resultDiv, JSON.stringify({ ...data, responseEtag: etag }, null, 2), res.ok ? 'success' : 'error');
+            } catch (err) {
+                showResult(resultDiv, err.message, 'error');
+            }
+        }
+
+        // 파일 다운로드 (ETag 확인)
+        async function downloadFile() {
+            const path = document.getElementById('downloadPath').value;
+            const resultDiv = document.getElementById('downloadResult');
+            const etagDiv = document.getElementById('currentEtag');
+            const etagValue = document.getElementById('etagValue');
+
+            if (!path) {
+                showResult(resultDiv, '파일 경로를 입력해주세요.', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch(`${API_BASE}/webdav/download/${path}`);
+                const etag = res.headers.get('ETag');
+                const contentType = res.headers.get('Content-Type');
+                const contentLength = res.headers.get('Content-Length');
+
+                if (etag) {
+                    etagDiv.style.display = 'block';
+                    etagValue.textContent = etag;
+                }
+
+                showResult(resultDiv, JSON.stringify({
+                    status: res.status,
+                    contentType,
+                    contentLength,
+                    etag
+                }, null, 2), res.ok ? 'success' : 'error');
+            } catch (err) {
+                showResult(resultDiv, err.message, 'error');
+            }
+        }
+
+        // ETag 복사
+        function copyEtagToUpdate() {
+            const etag = document.getElementById('etagValue').textContent;
+            if (etag) {
+                document.getElementById('updateEtag').value = etag.replace(/"/g, '');
+            }
+        }
+
+        // 파일 업데이트
+        async function updateFile() {
+            const path = document.getElementById('updatePath').value;
+            const etag = document.getElementById('updateEtag').value;
+            const file = document.getElementById('updateFile').files[0];
+            const userId = document.getElementById('updateUserId').value;
+            const resultDiv = document.getElementById('updateResult');
+
+            if (!path) {
+                showResult(resultDiv, '파일 경로를 입력해주세요.', 'error');
+                return;
+            }
+            if (!file) {
+                showResult(resultDiv, '파일을 선택해주세요.', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('userId', userId);
+
+            const headers = {};
+            if (etag) {
+                headers['If-Match'] = `"${etag}"`;
+            }
+
+            try {
+                const res = await fetch(`${API_BASE}/webdav/file/${path}`, {
+                    method: 'PUT',
+                    headers,
+                    body: formData
+                });
+                const data = await res.json();
+                const newEtag = res.headers.get('ETag');
+
+                let statusText = '';
+                if (res.status === 428) statusText = ' (If-Match 필요)';
+                if (res.status === 412) statusText = ' (ETag 불일치)';
+                if (data.changed === false) statusText = ' (동일 파일 - 스킵)';
+                if (data.changed === true) statusText = ' (업데이트 완료)';
+
+                showResult(resultDiv, JSON.stringify({
+                    status: res.status + statusText,
+                    ...data,
+                    responseEtag: newEtag
+                }, null, 2), res.ok ? 'success' : 'error');
+            } catch (err) {
+                showResult(resultDiv, err.message, 'error');
+            }
+        }
+
+        // 자동 테스트
+        async function runAutoTest() {
+            const count = parseInt(document.getElementById('testCount').value);
+            const logDiv = document.getElementById('testLog');
+            logDiv.innerHTML = '';
+
+            // 테스트용 파일 생성
+            const testContent = 'test content ' + Date.now();
+            const blob = new Blob([testContent], { type: 'text/plain' });
+            const file = new File([blob], 'auto_test.txt', { type: 'text/plain' });
+
+            let total = 0, skipped = 0, updated = 0;
+            let currentEtag = null;
+
+            // 1. 먼저 업로드
+            addLog(logDiv, '[시작] 테스트 파일 업로드...', 'info');
+
+            const uploadForm = new FormData();
+            uploadForm.append('file', file);
+            uploadForm.append('path', 'auto_test');
+            uploadForm.append('filename', 'auto_test.txt');
+            uploadForm.append('userId', 'auto_tester');
+
+            try {
+                const uploadRes = await fetch(`${API_BASE}/webdav/upload`, {
+                    method: 'POST',
+                    body: uploadForm
+                });
+                const uploadData = await uploadRes.json();
+                currentEtag = uploadData.etag;
+                addLog(logDiv, `[업로드 완료] ETag: ${currentEtag}`, 'success');
+            } catch (err) {
+                addLog(logDiv, `[업로드 실패] ${err.message}`, 'error');
+                return;
+            }
+
+            // 2. 동일 파일로 반복 업데이트
+            addLog(logDiv, `[테스트] 동일 파일로 ${count}회 업데이트 시도...`, 'info');
+
+            for (let i = 1; i <= count; i++) {
+                total++;
+
+                const updateForm = new FormData();
+                updateForm.append('file', file);
+                updateForm.append('userId', 'auto_tester');
+
+                try {
+                    const res = await fetch(`${API_BASE}/webdav/file/auto_test/auto_test.txt`, {
+                        method: 'PUT',
+                        headers: { 'If-Match': `"${currentEtag}"` },
+                        body: updateForm
+                    });
+                    const data = await res.json();
+
+                    if (data.changed === false) {
+                        skipped++;
+                        addLog(logDiv, `[${i}/${count}] 스킵됨 (동일 파일)`, 'success');
+                    } else {
+                        updated++;
+                        currentEtag = data.etag;
+                        addLog(logDiv, `[${i}/${count}] 업데이트됨 (새 ETag: ${currentEtag})`, 'info');
+                    }
+                } catch (err) {
+                    addLog(logDiv, `[${i}/${count}] 에러: ${err.message}`, 'error');
+                }
+
+                // 통계 업데이트
+                document.getElementById('statTotal').textContent = total;
+                document.getElementById('statSkipped').textContent = skipped;
+                document.getElementById('statSaved').textContent = skipped;
+                document.getElementById('statEfficiency').textContent =
+                    total > 0 ? Math.round((skipped / total) * 100) + '%' : '0%';
+
+                await sleep(100);
+            }
+
+            addLog(logDiv, `[완료] 총 ${total}회 중 ${skipped}회 스킵 (${Math.round((skipped/total)*100)}% 절감)`, 'success');
+        }
+
+        // 통계 로드
+        async function loadStats() {
+            try {
+                const res = await fetch(`${API_BASE}/webdav/stats`);
+                const data = await res.json();
+
+                document.getElementById('statsUpload').textContent = data.stats?.UPLOAD || 0;
+                document.getElementById('statsUpdate').textContent = data.stats?.UPDATE || 0;
+                document.getElementById('statsDelete').textContent = data.stats?.DELETE || 0;
+                document.getElementById('statsDesync').textContent = data.stats?.DESYNC || 0;
+
+                document.getElementById('statsResult').textContent = JSON.stringify(data, null, 2);
+                document.getElementById('statsResult').style.display = 'block';
+            } catch (err) {
+                document.getElementById('statsResult').textContent = '통계 API가 아직 구현되지 않았습니다.';
+                document.getElementById('statsResult').style.display = 'block';
+            }
+        }
+
+        // 유틸리티
+        function showResult(div, text, type) {
+            div.textContent = text;
+            div.className = 'result ' + type;
+            div.style.display = 'block';
+        }
+
+        function addLog(div, text, type) {
+            const entry = document.createElement('div');
+            entry.className = 'log-entry ' + type;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+            div.appendChild(entry);
+            div.scrollTop = div.scrollHeight;
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+    </script>
+</body>
+</html>
