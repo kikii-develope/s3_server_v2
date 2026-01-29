@@ -1,84 +1,87 @@
-import swaggerJsdoc from 'swagger-jsdoc';
-import { pkg } from './appInfo.js';
+import swaggerJsdoc from "swagger-jsdoc";
+import { pkg } from "./appInfo.js";
 
 const options = {
   definition: {
-    openapi: '3.0.0',
+    openapi: "3.0.0",
     info: {
-      title: 'File Uploader API',
+      title: "File Uploader API",
       version: pkg.version,
-      description: 'S3 파일 업로드 서버 API 문서',
+      description: "S3 파일 업로드 서버 API 문서",
       contact: {
-        name: 'inseok lee',
-        email: 'inseok.lee@example.com'
-      }
+        name: "inseok lee",
+        email: "inseok.lee@example.com",
+      },
     },
     servers: [
       {
-        url: process.env.PORT == 80 ? "https://file-server.kiki-bus.com" : 'http://localhost:8989',
-        description: 'Development server'
-      }
+        url:
+          process.env.PORT == 80
+            ? "https://file-server.kiki-bus.com"
+            : `http://kikii.iptime.org:${process.env.PORT || 8000}`,
+        description: "Development server",
+      },
     ],
     components: {
       schemas: {
         FileUploadRequest: {
-          type: 'object',
-          required: ['bucketName'],
+          type: "object",
+          required: ["bucketName"],
           properties: {
             bucketName: {
-              type: 'string',
-              description: 'S3 버킷 이름'
-            }
-          }
+              type: "string",
+              description: "S3 버킷 이름",
+            },
+          },
         },
         MultipleFileUploadRequest: {
-          type: 'object',
-          required: ['bucketName', 'path'],
+          type: "object",
+          required: ["bucketName", "path"],
           properties: {
             bucketName: {
-              type: 'string',
-              description: 'S3 버킷 이름'
+              type: "string",
+              description: "S3 버킷 이름",
             },
             path: {
-              type: 'string',
-              description: '업로드할 경로'
-            }
-          }
+              type: "string",
+              description: "업로드할 경로",
+            },
+          },
         },
         UploadResponse: {
-          type: 'object',
+          type: "object",
           properties: {
             message: {
-              type: 'string',
-              description: '응답 메시지'
+              type: "string",
+              description: "응답 메시지",
             },
             status: {
-              type: 'integer',
-              description: 'HTTP 상태 코드'
+              type: "integer",
+              description: "HTTP 상태 코드",
             },
             object: {
-              type: 'object',
-              description: '업로드 결과 객체'
-            }
-          }
+              type: "object",
+              description: "업로드 결과 객체",
+            },
+          },
         },
         ErrorResponse: {
-          type: 'object',
+          type: "object",
           properties: {
             message: {
-              type: 'string',
-              description: '에러 메시지'
+              type: "string",
+              description: "에러 메시지",
             },
             status: {
-              type: 'integer',
-              description: 'HTTP 상태 코드'
-            }
-          }
-        }
-      }
-    }
+              type: "integer",
+              description: "HTTP 상태 코드",
+            },
+          },
+        },
+      },
+    },
   },
-  apis: ['./index.js', './src/router/*.js'] // API 라우트 파일들
+  apis: ["./index.js", "./src/router/*.js"], // API 라우트 파일들
 };
 
-export const specs = swaggerJsdoc(options); 
+export const specs = swaggerJsdoc(options);

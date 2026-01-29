@@ -4,11 +4,12 @@ import https from 'https';
 import { v4 as uuidv4 } from 'uuid';
 import { decodePathTwiceToNFC, decodePathTwiceToNFKC } from "../../utils/decoder.js";
 
-const ca = fs.readFileSync('local.crt');
-const agent = new https.Agent({
-  ca: ca,
-  rejectUnauthorized: true
-});
+// SSL 인증서 설정 (필요시 주석 해제)
+// const ca = fs.readFileSync('local.crt');
+// const agent = new https.Agent({
+//   ca: ca,
+//   rejectUnauthorized: true
+// });
 
 const webdavUrl = process.env.WEBDAV_URL;
 
@@ -42,6 +43,47 @@ const client = createClient(
 
 export const getBaseUrl = () => webdavUrl;
 
+/**
+ * 중복 파일명 처리 - 파일명(1), 파일명(2) 형태로 고유 파일명 생성
+ * @param {string} dirPath - 디렉토리 경로
+ * @param {string} filename - 원본 파일명
+ * @returns {string} 고유 파일명
+ */
+const getUniqueFilename = async (dirPath, filename) => {
+  const normalizedPath = dirPath.startsWith('/') ? dirPath : `/${dirPath}`;
+  const contents = await getDirectoryContents(`/www${normalizedPath}`);
+
+  if (!contents) {
+    return filename;
+  }
+
+  const existingFiles = contents
+    .filter(item => item.type === 'file')
+    .map(item => item.basename.normalize('NFKC'));
+
+  if (!existingFiles.includes(filename.normalize('NFKC'))) {
+    return filename;
+  }
+
+  // 확장자 분리
+  const lastDotIndex = filename.lastIndexOf('.');
+  const hasExtension = lastDotIndex > 0;
+  const baseName = hasExtension ? filename.slice(0, lastDotIndex) : filename;
+  const extension = hasExtension ? filename.slice(lastDotIndex) : '';
+
+  // 숫자 증가시키며 고유 파일명 찾기
+  let counter = 1;
+  let newFilename = `${baseName}(${counter})${extension}`;
+
+  while (existingFiles.includes(newFilename.normalize('NFKC'))) {
+    counter++;
+    newFilename = `${baseName}(${counter})${extension}`;
+  }
+
+  console.log(`[RENAME] 중복 파일명 발견: ${filename} -> ${newFilename}`);
+  return newFilename;
+};
+
 export const uploadFile = async (path, file, filename) => {
 
   filename = filename.replace(/ /g, "_");
@@ -54,12 +96,15 @@ export const uploadFile = async (path, file, filename) => {
 
   file.originalname = filename;
 
-  const fullPath = `www/${path}/${filename}`;
+  const fullPath = `/www/${path}/${filename}`;
+  console.log(`[UPLOAD] 파일 업로드중... [${filename}] (${(file.size / 1024).toFixed(2)} KB)`);
   try {
     const res = await client.putFileContents(fullPath, file.buffer);
+    console.log(`[UPLOAD] 완료: ${filename}`);
 
     return { res, file };
   } catch (error) {
+    console.log(`[UPLOAD] 실패: ${filename} - ${error.message}`);
     console.log(error);
 
     throw error;
@@ -81,13 +126,18 @@ export const createDirectory = async (path) => {
 
 export const uploadSingle = async (path, file, filename) => {
   try {
-    const { res, file: f } = await uploadFile(path, file, filename);
+    // 중복 파일명 처리
+    const uniqueFilename = await getUniqueFilename(path, filename.replace(/ /g, "_"));
+
+    const { res, file: f } = await uploadFile(path, file, uniqueFilename);
 
     return {
       filename: f.originalname,
+      originalFilename: filename,
       success: true,
       size: f.size,
-      url: getBaseUrl() + `/www/${path}/${file.originalname}`
+      url: getBaseUrl() + `/www/${path}/${f.originalname}`,
+      renamed: uniqueFilename !== filename.replace(/ /g, "_")
     };
   } catch (error) {
     return {
@@ -117,7 +167,7 @@ export const ensureDirectory = async (path) => {
 
 
     // 1) 이미 있으면 통과
-    const exists = await existDirectory(next);
+    const exists = await existDirectory(`/www${next.startsWith('/') ? '' : '/'}${next}`);
 
 
     if (!exists) {
@@ -173,6 +223,9 @@ export const getFileFromDirectory = async (directoryPath, fileName) => {
     // 디렉토리에서 특정 파일 찾기
     const directoryContents = await getDirectoryContents(directoryPath);
 
+    if (!directoryContents) {
+      throw new Error(`디렉토리를 찾을 수 없습니다: ${directoryPath}`);
+    }
 
     const targetFile = directoryContents.find(item => {
 
@@ -223,6 +276,7 @@ export const existDirectory = async (path) => {
  */
 export const uploadMultipleFilesParallel = async (path, files, filenames, concurrency = 3) => {
   const results = [];
+  console.log(`[UPLOAD] 다중 파일 업로드 시작 (총 ${files.length}개)`);
 
   await ensureDirectory(path);
 
@@ -249,28 +303,20 @@ export const uploadMultipleFilesParallel = async (path, files, filenames, concur
         }
 
 
-        const fullPath = getBaseUrl() + `/www/${path}/${filename}`;
+        // 중복 파일명 처리
+        const uniqueFilename = await getUniqueFilename(path, filename.replace(/ /g, "_"));
+        const wasRenamed = uniqueFilename !== filename.replace(/ /g, "_");
 
-        const existedFile = await getFile(fullPath);
-
-        if (existedFile) {
-          return {
-            filename: filename,
-            success: true,
-            size: existedFile.size,
-            url: getBaseUrl() + `/www/${path}/${filename}`,
-            msg: "파일 존재, 요청을 생략합니다."
-          }
-        }
-
-        const { res, file: f } = await uploadFile(path, file, filename);
+        const { res, file: f } = await uploadFile(path, file, uniqueFilename);
 
         return {
           filename: f.originalname,
+          originalFilename: filename,
           success: true,
           size: f.size,
-          url: getBaseUrl() + `/www/${path}/${file.originalname}`,
-          msg: "신규 생성 완료"
+          url: getBaseUrl() + `/www/${path}/${f.originalname}`,
+          msg: wasRenamed ? `중복으로 이름 변경: ${filename} → ${uniqueFilename}` : "신규 생성 완료",
+          renamed: wasRenamed
         };
       } catch (error) {
         return {
@@ -283,7 +329,100 @@ export const uploadMultipleFilesParallel = async (path, files, filenames, concur
 
     const chunkResults = await Promise.all(chunkPromises);
     results.push(...chunkResults);
+    console.log(`[UPLOAD] 진행중... ${Math.min(i + concurrency, files.length)}/${files.length}개 완료`);
   }
 
+  const successCount = results.filter(r => r.success).length;
+  console.log(`[UPLOAD] 다중 파일 업로드 완료: ${successCount}/${files.length}개 성공`);
   return results;
 };
+
+/**
+ * 파일 삭제
+ * @param {string} path - 삭제할 파일 경로
+ */
+export const deleteFile = async (path) => {
+  const fullPath = `/www/${path}`.normalize('NFKC');
+  try {
+    await client.deleteFile(fullPath);
+  } catch (error) {
+    console.error('파일 삭제 실패:', error);
+    throw error;
+  }
+}
+
+/**
+ * 디렉토리 삭제
+ * @param {string} path - 삭제할 디렉토리 경로
+ */
+export const deleteDirectory = async (path) => {
+  const fullPath = `/www/${path}`.normalize('NFKC');
+  try {
+    await client.deleteFile(fullPath);
+  } catch (error) {
+    console.error('디렉토리 삭제 실패:', error);
+    throw error;
+  }
+}
+
+/**
+ * 파일/디렉토리 이동
+ * @param {string} sourcePath - 원본 경로
+ * @param {string} destPath - 대상 경로
+ * @param {boolean} overwrite - 덮어쓰기 여부 (기본값: true)
+ */
+export const moveFile = async (sourcePath, destPath, overwrite = true) => {
+  const src = `/www/${sourcePath}`.normalize('NFKC');
+  const dest = `/www/${destPath}`.normalize('NFKC');
+  try {
+    await client.moveFile(src, dest, { overwrite });
+  } catch (error) {
+    console.error('파일 이동 실패:', error);
+    throw error;
+  }
+}
+
+/**
+ * 파일/디렉토리 복사
+ * @param {string} sourcePath - 원본 경로
+ * @param {string} destPath - 대상 경로
+ * @param {boolean} overwrite - 덮어쓰기 여부 (기본값: true)
+ */
+export const copyFile = async (sourcePath, destPath, overwrite = true) => {
+  const src = `/www/${sourcePath}`.normalize('NFKC');
+  const dest = `/www/${destPath}`.normalize('NFKC');
+  try {
+    await client.copyFile(src, dest, { overwrite });
+  } catch (error) {
+    console.error('파일 복사 실패:', error);
+    throw error;
+  }
+}
+
+/**
+ * 파일 업데이트 (덮어쓰기)
+ * @param {string} path - 파일 경로 (디렉토리)
+ * @param {Object} file - 업로드할 파일 객체
+ * @param {string} filename - 파일명
+ */
+export const updateFile = async (path, file, filename) => {
+  filename = filename.replace(/ /g, "_");
+
+  if (path.startsWith("/")) {
+    path = path.replace("/", "");
+  }
+
+  file.originalname = filename;
+
+  const fullPath = `/www/${path}/${filename}`.normalize('NFKC');
+  console.log(`[UPDATE] 파일 업데이트중... [${filename}] (${(file.size / 1024).toFixed(2)} KB)`);
+  try {
+    const res = await client.putFileContents(fullPath, file.buffer, { overwrite: true });
+    console.log(`[UPDATE] 완료: ${filename}`);
+    return { res, file };
+  } catch (error) {
+    console.log(`[UPDATE] 실패: ${filename} - ${error.message}`);
+    console.error('파일 업데이트 실패:', error);
+    throw error;
+  }
+}
