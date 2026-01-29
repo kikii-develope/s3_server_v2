@@ -80,7 +80,7 @@ const getUniqueFilename = async (dirPath, filename) => {
     newFilename = `${baseName}(${counter})${extension}`;
   }
 
-  console.log(`📝 중복 파일명 발견: ${filename} → ${newFilename}`);
+  console.log(`[RENAME] 중복 파일명 발견: ${filename} -> ${newFilename}`);
   return newFilename;
 };
 
@@ -97,14 +97,14 @@ export const uploadFile = async (path, file, filename) => {
   file.originalname = filename;
 
   const fullPath = `/www/${path}/${filename}`;
-  console.log(`📤 파일 업로드중... [${filename}] (${(file.size / 1024).toFixed(2)} KB)`);
+  console.log(`[UPLOAD] 파일 업로드중... [${filename}] (${(file.size / 1024).toFixed(2)} KB)`);
   try {
     const res = await client.putFileContents(fullPath, file.buffer);
-    console.log(`✅ 업로드 완료: ${filename}`);
+    console.log(`[UPLOAD] 완료: ${filename}`);
 
     return { res, file };
   } catch (error) {
-    console.log(`❌ 업로드 실패: ${filename} - ${error.message}`);
+    console.log(`[UPLOAD] 실패: ${filename} - ${error.message}`);
     console.log(error);
 
     throw error;
@@ -276,7 +276,7 @@ export const existDirectory = async (path) => {
  */
 export const uploadMultipleFilesParallel = async (path, files, filenames, concurrency = 3) => {
   const results = [];
-  console.log(`📦 다중 파일 업로드 시작 (총 ${files.length}개)`);
+  console.log(`[UPLOAD] 다중 파일 업로드 시작 (총 ${files.length}개)`);
 
   await ensureDirectory(path);
 
@@ -329,11 +329,11 @@ export const uploadMultipleFilesParallel = async (path, files, filenames, concur
 
     const chunkResults = await Promise.all(chunkPromises);
     results.push(...chunkResults);
-    console.log(`📊 진행중... ${Math.min(i + concurrency, files.length)}/${files.length}개 완료`);
+    console.log(`[UPLOAD] 진행중... ${Math.min(i + concurrency, files.length)}/${files.length}개 완료`);
   }
 
   const successCount = results.filter(r => r.success).length;
-  console.log(`✅ 다중 파일 업로드 완료: ${successCount}/${files.length}개 성공`);
+  console.log(`[UPLOAD] 다중 파일 업로드 완료: ${successCount}/${files.length}개 성공`);
   return results;
 };
 
@@ -415,13 +415,13 @@ export const updateFile = async (path, file, filename) => {
   file.originalname = filename;
 
   const fullPath = `/www/${path}/${filename}`.normalize('NFKC');
-  console.log(`🔄 파일 업데이트중... [${filename}] (${(file.size / 1024).toFixed(2)} KB)`);
+  console.log(`[UPDATE] 파일 업데이트중... [${filename}] (${(file.size / 1024).toFixed(2)} KB)`);
   try {
     const res = await client.putFileContents(fullPath, file.buffer, { overwrite: true });
-    console.log(`✅ 업데이트 완료: ${filename}`);
+    console.log(`[UPDATE] 완료: ${filename}`);
     return { res, file };
   } catch (error) {
-    console.log(`❌ 업데이트 실패: ${filename} - ${error.message}`);
+    console.log(`[UPDATE] 실패: ${filename} - ${error.message}`);
     console.error('파일 업데이트 실패:', error);
     throw error;
   }
