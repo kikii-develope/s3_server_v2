@@ -1,7 +1,9 @@
 import cors from "cors";
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
-import "dotenv/config.js";
+if (process.env.NODE_ENV === "development") {
+  await import("dotenv/config.js");
+}
 import { pkg } from "./src/config/appInfo.js";
 import swaggerUi from "swagger-ui-express";
 import { specs } from "./src/config/swagger.js";
@@ -44,13 +46,13 @@ const decodeUrl = (url: string): string => {
 // HTTP 메서드별 아이콘
 const getMethodIcon = (method: string): string => {
   const icons: Record<string, string> = {
-    GET: "📖",      // 조회
-    POST: "📤",     // 업로드/생성
-    PUT: "✏️",      // 업데이트
-    PATCH: "🔧",    // 부분 수정
-    DELETE: "🗑️",   // 삭제
-    OPTIONS: "⚙️",  // 옵션
-    HEAD: "🔍",     // 헤더 조회
+    GET: "📖", // 조회
+    POST: "📤", // 업로드/생성
+    PUT: "✏️", // 업데이트
+    PATCH: "🔧", // 부분 수정
+    DELETE: "🗑️", // 삭제
+    OPTIONS: "⚙️", // 옵션
+    HEAD: "🔍", // 헤더 조회
   };
   return icons[method] || "📨";
 };
