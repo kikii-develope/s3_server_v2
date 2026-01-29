@@ -13,9 +13,12 @@ on:
 
 env:
   DOCKER_IMAGE: kikidockerhub/file-server
+  AWS_REGION: ap-northeast-2
+  ECS_CLUSTER: default
+  ECS_SERVICE: kiki-file-server-task-service
 
 jobs:
-  # PR 및 develop 브랜치: 빌드 테스트만
+  # PR: 빌드 테스트만
   build-test:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -35,8 +38,8 @@ jobs:
       - name: Build Docker image (test)
         run: docker build -t ${{ env.DOCKER_IMAGE }}:test .
 
-  # main 브랜치 또는 태그: 빌드 및 배포
-  build-and-push:
+  # main 브랜치 또는 태그: 빌드, 푸시, ECS 배포
+  build-push-deploy:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -84,3 +87,72 @@ jobs:
         run: |
           echo "Pushed tags:"
           echo "${{ steps.meta.outputs.tags }}"
+
+      # ECS 배포
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_IAM_USER_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_IAM_USER_SECRET }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get current task definition
+        id: task-def
+        run: |
+          TASK_DEF_ARN=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query 'services[0].taskDefinition' \
+            --output text)
+          echo "task_def_arn=$TASK_DEF_ARN" >> $GITHUB_OUTPUT
+
+          TASK_DEF_NAME=$(echo $TASK_DEF_ARN | cut -d'/' -f2 | cut -d':' -f1)
+          echo "task_def_name=$TASK_DEF_NAME" >> $GITHUB_OUTPUT
+
+      - name: Download task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ steps.task-def.outputs.task_def_name }} \
+            --query 'taskDefinition' \
+            > task-definition.json
+
+          # 불필요한 필드 제거
+          cat task-definition.json | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' > clean-task-definition.json
+          mv clean-task-definition.json task-definition.json
+
+      - name: Determine image tag
+        id: image-tag
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            # 태그인 경우: v1.2.0 -> 1.2.0
+            TAG="${{ github.ref_name }}"
+            TAG="${TAG#v}"
+          else
+            # main 브랜치인 경우
+            TAG="latest"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Image tag: $TAG"
+
+      - name: Update task definition with new image
+        id: render-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.ECS_SERVICE }}
+          image: ${{ env.DOCKER_IMAGE }}:${{ steps.image-tag.outputs.tag }}
+
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+      - name: Deployment complete
+        run: |
+          echo "Deployment complete!"
+          echo "Image: ${{ env.DOCKER_IMAGE }}:${{ steps.image-tag.outputs.tag }}"
+          echo "Cluster: ${{ env.ECS_CLUSTER }}"
+          echo "Service: ${{ env.ECS_SERVICE }}"
