@@ -15,10 +15,11 @@ const options = {
     },
     servers: [
       {
-        url:
-          process.env.PORT == 80
-            ? "https://file-server.kiki-bus.com"
-            : `http://kikii.iptime.org:${process.env.PORT || 8000}`,
+        url: "https://file-server.kiki-bus.com",
+        description: "Production server",
+      },
+      {
+        url: `http://kikii.iptime.org:${process.env.PORT || 8000}`,
         description: "Development server",
       },
     ],
