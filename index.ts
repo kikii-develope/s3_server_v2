@@ -151,7 +151,7 @@ app.use(apiLogger); // API 요청/응답 로깅
 app.use("/webdav", webDavRoutes);
 app.use("/s3", s3Routes);
 
-const PORT_NUM = process.env.PORT || 8000;
+const PORT_NUM = 80;
 
 app.listen(PORT_NUM, () => {
   console.log("Server is running on port " + PORT_NUM);
