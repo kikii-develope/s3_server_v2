@@ -12,7 +12,8 @@ on:
       - develop
 
 env:
-  DOCKER_IMAGE: kikidockerhub/file-server
+  ECR_REGISTRY: 437995227701.dkr.ecr.ap-northeast-2.amazonaws.com
+  ECR_REPOSITORY: file-upload-server
   AWS_REGION: ap-northeast-2
   ECS_CLUSTER: default
   ECS_SERVICE: kiki-file-server-task-service
@@ -38,7 +39,7 @@ jobs:
         run: npm ci
 
       - name: Build Docker image (test)
-        run: docker build -t ${{ env.DOCKER_IMAGE }}:test .
+        run: docker build -t ${{ env.ECR_REPOSITORY }}:test .
 
   # main 브랜치 또는 태그: 빌드, 푸시, ECS 배포
   build-push-deploy:
@@ -58,17 +59,22 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          username: ${{ secrets.DOCKER_USER_NAME }}
-          password: ${{ secrets.DOCKER_ACCESS_TOKEN }}
+          aws-access-key-id: ${{ secrets.AWS_IAM_USER_KEY }}
+          aws-secret-access-key: ${{ secrets.AWS_IAM_USER_SECRET }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.DOCKER_IMAGE }}
+          images: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
           tags: |
             # 태그 push 시: v1.2.0 -> 1.2.0
             type=semver,pattern={{version}}
@@ -95,13 +101,6 @@ jobs:
           echo "${{ steps.meta.outputs.tags }}"
 
       # ECS 배포
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_IAM_USER_KEY }}
-          aws-secret-access-key: ${{ secrets.AWS_IAM_USER_SECRET }}
-          aws-region: ${{ env.AWS_REGION }}
-
       - name: Get current task definition
         id: task-def
         run: |
@@ -146,7 +145,7 @@ jobs:
         with:
           task-definition: task-definition.json
           container-name: ${{ env.CONTAINER_NAME }}
-          image: ${{ env.DOCKER_IMAGE }}:${{ steps.image-tag.outputs.tag }}
+          image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.image-tag.outputs.tag }}
 
       - name: Deploy to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
@@ -159,6 +158,6 @@ jobs:
       - name: Deployment complete
         run: |
           echo "Deployment complete!"
-          echo "Image: ${{ env.DOCKER_IMAGE }}:${{ steps.image-tag.outputs.tag }}"
+          echo "Image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.image-tag.outputs.tag }}"
           echo "Cluster: ${{ env.ECS_CLUSTER }}"
           echo "Service: ${{ env.ECS_SERVICE }}"
