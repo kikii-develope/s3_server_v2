@@ -12,23 +12,36 @@ import webDavRoutes from "./src/router/webDavRoutes.js";
 
 const app = express();
 
-// CORS 설정 - 특정 도메인 허용
+// CORS 설정 - 환경별 분기
+// const getCorsOrigin = () => {
+//   if (process.env.NODE_ENV === 'development') {
+//     return true; // 개발 환경: 모든 origin 허용
+//   }
+
+//   // 프로덕션: 환경변수에서 허용 도메인 가져오기
+//   if (process.env.CORS_ORIGINS) {
+//     return process.env.CORS_ORIGINS.split(',').map(origin => origin.trim());
+//   }
+
+//   // 기본 허용 도메인
+//   return [
+//     // 'http://localhost:3000',
+//     // 'http://localhost:3003',
+//     // 'http://kikii.iptime.org:3012',
+//     // 'http://kikii.iptime.org:3013'
+//   ];
+// };
+
 // const corsOptions = {
-//     origin: [
-//         'http://localhost:3000',
-//         'http://localhost:3003',
-//         'http://localhost:8080',
-//         'http://kikii.iptime.org:3012',
-//         'http://kikii.iptime.org:3013',
-//         'http://kikii.iptime.org:8989',
-//     ],
-//     credentials: true,  // 쿠키/인증 헤더 허용
-//     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-//     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+//   origin: getCorsOrigin(),
+//   credentials: true,
+//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+//   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 // };
 
 app.use("/swagger-ui.html", swaggerUi.serve, swaggerUi.setup(specs));
 
+// app.use(cors(corsOptions));
 app.use(cors());
 
 app.use(express.json());
