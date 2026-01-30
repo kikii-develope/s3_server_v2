@@ -17,7 +17,7 @@ env:
   ECS_CLUSTER: default
   ECS_SERVICE: kiki-file-server-task-service
   ECS_TASK_FAMILY: kiki-file-server-task
-  CONTAINER_NAME: kiki-file-server-task
+  CONTAINER_NAME: file-upload-server
 
 jobs:
   # PR: 빌드 테스트만
