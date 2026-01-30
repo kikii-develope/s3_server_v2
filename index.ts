@@ -1,9 +1,8 @@
 import cors from "cors";
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
-if (process.env.NODE_ENV === "development") {
-  require("dotenv").config();
-}
+import dotenv from "dotenv";
+dotenv.config();
 import { pkg } from "./src/config/appInfo.js";
 import swaggerUi from "swagger-ui-express";
 import { specs } from "./src/config/swagger.js";

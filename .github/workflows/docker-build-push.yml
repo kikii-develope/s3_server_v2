@@ -70,6 +70,25 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Create .env file
+        run: |
+          cat << EOF > .env
+          NODE_ENV=production
+          PORT=80
+          NODE_TLS_REJECT_UNAUTHORIZED=0
+          AWS_IAM_USER_KEY=${{ secrets.AWS_IAM_USER_KEY }}
+          AWS_IAM_USER_SECRET=${{ secrets.AWS_IAM_USER_SECRET }}
+          AWS_REGION=${{ secrets.AWS_REGION }}
+          WEBDAV_URL=${{ secrets.WEBDAV_URL }}
+          WEBDAV_USER=${{ secrets.WEBDAV_USER }}
+          WEBDAV_PASSWORD=${{ secrets.WEBDAV_PASSWORD }}
+          DB_HOST=${{ secrets.DB_HOST }}
+          DB_PORT=${{ secrets.DB_PORT }}
+          DB_USER=${{ secrets.DB_USER }}
+          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+          DB_NAME=${{ secrets.DB_NAME }}
+          EOF
+
       - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@v5
