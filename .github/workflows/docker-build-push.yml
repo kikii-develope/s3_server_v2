@@ -72,22 +72,20 @@ jobs:
 
       - name: Create .env file
         run: |
-          cat << EOF > .env
-          NODE_ENV=production
-          PORT=80
-          NODE_TLS_REJECT_UNAUTHORIZED=0
-          AWS_IAM_USER_KEY=${{ secrets.AWS_IAM_USER_KEY }}
-          AWS_IAM_USER_SECRET=${{ secrets.AWS_IAM_USER_SECRET }}
-          AWS_REGION=${{ secrets.AWS_REGION }}
-          WEBDAV_URL=${{ secrets.WEBDAV_URL }}
-          WEBDAV_USER=${{ secrets.WEBDAV_USER }}
-          WEBDAV_PASSWORD=${{ secrets.WEBDAV_PASSWORD }}
-          DB_HOST=${{ secrets.DB_HOST }}
-          DB_PORT=${{ secrets.DB_PORT }}
-          DB_USER=${{ secrets.DB_USER }}
-          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-          DB_NAME=${{ secrets.DB_NAME }}
-          EOF
+          echo "NODE_ENV=production" > .env
+          echo "PORT=80" >> .env
+          echo "NODE_TLS_REJECT_UNAUTHORIZED=0" >> .env
+          echo "AWS_IAM_USER_KEY=${{ secrets.AWS_IAM_USER_KEY }}" >> .env
+          echo "AWS_IAM_USER_SECRET=${{ secrets.AWS_IAM_USER_SECRET }}" >> .env
+          echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> .env
+          echo "WEBDAV_URL=${{ secrets.WEBDAV_URL }}" >> .env
+          echo "WEBDAV_USER=${{ secrets.WEBDAV_USER }}" >> .env
+          echo "WEBDAV_PASSWORD=${{ secrets.WEBDAV_PASSWORD }}" >> .env
+          echo "DB_HOST=${{ secrets.DB_HOST }}" >> .env
+          echo "DB_PORT=${{ secrets.DB_PORT }}" >> .env
+          echo "DB_USER=${{ secrets.DB_USER }}" >> .env
+          echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
+          echo "DB_NAME=${{ secrets.DB_NAME }}" >> .env
 
       - name: Extract metadata (tags, labels)
         id: meta
