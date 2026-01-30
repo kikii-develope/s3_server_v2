@@ -76,12 +76,10 @@ jobs:
         with:
           images: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
           tags: |
-            # 태그 push 시: v1.2.0 -> 1.2.0
+            # 태그 push 시: v1.4.0 -> 1.4.0
             type=semver,pattern={{version}}
             # main 브랜치 push 시: latest
             type=raw,value=latest,enable={{is_default_branch}}
-            # 커밋 SHA (항상)
-            type=sha,prefix=
 
       - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
@@ -89,7 +87,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -129,7 +127,7 @@ jobs:
         id: image-tag
         run: |
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            # 태그인 경우: v1.2.0 -> 1.2.0
+            # 태그인 경우: v1.4.0 -> 1.4.0
             TAG="${{ github.ref_name }}"
             TAG="${TAG#v}"
           else
