@@ -199,6 +199,8 @@ export const getFile = async (path) => {
 
     const decodedPath = decodePathTwiceToNFKC(url.pathname);
 
+    console.log(`[WebDAV] 요청 URL: ${webdavUrl}${decodedPath}`);
+
     let file = null;
     try {
       file = await client.getFileContents(decodedPath.normalize('NFKC'));
@@ -207,12 +209,14 @@ export const getFile = async (path) => {
       const directoryPath = decodedPath.split('/').slice(0, -1).join('/');
       const fName = decodedPath.split('/').pop();
 
+      console.log(`[WebDAV] 디렉토리 검색: ${webdavUrl}${directoryPath}`);
 
       file = await getFileFromDirectory(directoryPath, fName);
     }
 
     return file;
   } catch (error) {
+    console.error("[WebDAV] 파일 내용 조회 실패:", error.message);
     console.error("::: ERROR :::")
     console.error(error);
   }
@@ -254,9 +258,11 @@ export const getFileFromDirectory = async (directoryPath, fileName) => {
 
 export const getDirectoryContents = async (path) => {
   try {
+    console.log(`[WebDAV] 디렉토리 조회: ${webdavUrl}${path}`);
     const res = await client.getDirectoryContents(path);
     return res;
   } catch (error) {
+    console.log(`[WebDAV] 디렉토리 조회 실패: ${path} - ${error.message}`);
     return null;
   }
 }

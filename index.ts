@@ -3,6 +3,15 @@ import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import dotenv from "dotenv";
 dotenv.config();
+
+// 환경변수 확인
+console.log("=== 환경변수 확인 ===");
+console.log("NODE_ENV:", process.env.NODE_ENV);
+console.log("PORT:", process.env.PORT);
+console.log("NODE_TLS_REJECT_UNAUTHORIZED:", process.env.NODE_TLS_REJECT_UNAUTHORIZED);
+console.log("WEBDAV_URL:", process.env.WEBDAV_URL);
+console.log("DB_HOST:", process.env.DB_HOST);
+console.log("====================");
 import { pkg } from "./src/config/appInfo.js";
 import swaggerUi from "swagger-ui-express";
 import { specs } from "./src/config/swagger.js";
@@ -150,9 +159,9 @@ app.use(apiLogger); // API 요청/응답 로깅
 app.use("/webdav", webDavRoutes);
 app.use("/s3", s3Routes);
 
-const PORT_NUM = 80;
+const PORT = process.env.PORT || 8000;
 
-app.listen(PORT_NUM, () => {
-  console.log("Server is running on port " + PORT_NUM);
+app.listen(PORT, () => {
+  console.log("Server is running on port " + PORT);
   console.log("app version: " + pkg.version);
 });
