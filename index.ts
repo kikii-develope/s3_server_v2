@@ -2,7 +2,16 @@ import cors from "cors";
 import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import dotenv from "dotenv";
-dotenv.config();
+
+// 환경별 .env 파일 로드
+const envFile = process.env.NODE_ENV === 'production'
+  ? '.env.production'
+  : process.env.NODE_ENV === 'onprem'
+  ? '.env.onprem'
+  : '.env.development';
+
+dotenv.config({ path: envFile });
+console.log(`Loaded environment from: ${envFile}`);
 
 // 환경변수 확인
 console.log("=== 환경변수 확인 ===");

@@ -4,9 +4,11 @@
   "main": "dist/index.js",
   "type": "commonjs",
   "scripts": {
-    "dev": "tsx watch index.ts",
+    "dev": "NODE_ENV=development tsx watch index.ts",
+    "dev:onprem": "NODE_ENV=onprem tsx watch index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "start:onprem": "NODE_ENV=onprem node dist/index.js",
     "docker:dev": "docker-compose -f docker-compose.dev.yml up --build",
     "docker:dev:detach": "docker-compose -f docker-compose.dev.yml up -d --build",
     "docker:prod": "docker-compose -f docker-compose.prod.yml up --build",
