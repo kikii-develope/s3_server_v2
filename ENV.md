@@ -76,6 +76,13 @@ docker run -d -p 80:80 --env-file .env.production --name file-server-prod file-s
 - `PORT`: 서버 포트 번호
 - `NODE_ENV`: 실행 환경 (development, onprem, production)
 
+#### CORS 설정
+- `CORS_ORIGINS`: 허용할 도메인 목록 (쉼표로 구분)
+  - 개발: `http://localhost:3000,http://localhost:3003`
+  - 온프레미스: `http://kikii.iptime.org:3012,http://kikii.iptime.org:3013`
+  - 운영: `https://kiki-bus.com,https://admin.kiki-bus.com`
+- `CORS_CREDENTIALS`: 인증 정보(쿠키) 포함 허용 여부 (true/false)
+
 #### 데이터베이스 설정
 - `DB_HOST`: 데이터베이스 호스트
 - `DB_PORT`: 데이터베이스 포트

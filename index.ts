@@ -24,42 +24,19 @@ console.log("====================");
 import { pkg } from "./src/config/appInfo.js";
 import swaggerUi from "swagger-ui-express";
 import { specs } from "./src/config/swagger.js";
+import { corsOptions, logCorsConfig } from "./src/config/cors.js";
 import s3Routes from "./src/router/s3Routes.js";
 import webDavRoutes from "./src/router/webDavRoutes.js";
 
 const app = express();
 
-// CORS 설정 - 환경별 분기
-// const getCorsOrigin = () => {
-//   if (process.env.NODE_ENV === 'development') {
-//     return true; // 개발 환경: 모든 origin 허용
-//   }
-
-//   // 프로덕션: 환경변수에서 허용 도메인 가져오기
-//   if (process.env.CORS_ORIGINS) {
-//     return process.env.CORS_ORIGINS.split(',').map(origin => origin.trim());
-//   }
-
-//   // 기본 허용 도메인
-//   return [
-//     // 'http://localhost:3000',
-//     // 'http://localhost:3003',
-//     // 'http://kikii.iptime.org:3012',
-//     // 'http://kikii.iptime.org:3013'
-//   ];
-// };
-
-// const corsOptions = {
-//   origin: getCorsOrigin(),
-//   credentials: true,
-//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-//   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-// };
+// CORS 설정 로그 출력
+logCorsConfig();
 
 app.use("/swagger-ui.html", swaggerUi.serve, swaggerUi.setup(specs));
 
-// app.use(cors(corsOptions));
-app.use(cors());
+// CORS 미들웨어 적용
+app.use(cors(corsOptions));
 
 app.use(express.json());
 
