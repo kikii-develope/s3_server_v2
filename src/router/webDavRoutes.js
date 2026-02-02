@@ -24,7 +24,14 @@ const upload = multer({ storage: multer.memoryStorage(), preservePath: false });
  * /webdav/info:
  *   get:
  *     summary: WebDAV 서버 정보 조회
- *     description: WebDAV 서버의 기본 URL과 현재 시간을 조회합니다
+ *     description: |
+ *       WebDAV 서버의 기본 URL과 현재 시간을 조회합니다.
+ *
+ *       **환경별 루트 경로:**
+ *
+ *       - 개발 환경: `/kikii_test`
+ *
+ *       - 배포 환경: `/www`
  *     tags: [WebDAV]
  *     responses:
  *       200:
@@ -56,7 +63,14 @@ router.get('/info', getWebDAVInfo);
  * /webdav/upload:
  *   post:
  *     summary: WebDAV 파일 업로드
- *     description: 파일을 WebDAV 서버에 업로드하고 메타데이터를 DB에 저장합니다
+ *     description: |
+ *       파일을 WebDAV 서버에 업로드하고 메타데이터를 DB에 저장합니다.
+ *
+ *       **환경별 저장 경로:**
+ *
+ *       - 개발 환경: `/kikii_test/{path}/{filename}`
+ *
+ *       - 배포 환경: `/www/{path}/{filename}`
  *     tags: [WebDAV]
  *     requestBody:
  *       required: true
@@ -74,7 +88,7 @@ router.get('/info', getWebDAVInfo);
  *                 description: 업로드할 파일
  *               path:
  *                 type: string
- *                 description: "업로드 경로 (예: accident/test/2026-01-28/image)"
+ *                 description: "업로드 경로 (예: accident/test/2026-01-28/image) - 환경별 루트 경로(/www 또는 /kikii_test)는 자동으로 추가됩니다"
  *               filename:
  *                 type: string
  *                 description: 저장할 파일명 (미입력시 원본 파일명 사용)
@@ -109,6 +123,7 @@ router.get('/info', getWebDAVInfo);
  *                 path:
  *                   type: string
  *                   example: http://211.233.58.24:8800/www/accident/test/파일.jpg
+ *                   description: "파일의 전체 URL (배포: /www, 개발: /kikii_test)"
  *                 filename:
  *                   type: string
  *                 size:
@@ -134,7 +149,14 @@ router.post('/upload', upload.single('file'), uploadFileToWebDAV);
  * /webdav/upload-multiple:
  *   post:
  *     summary: WebDAV 다중 파일 업로드
- *     description: 여러 파일을 WebDAV 서버에 동시에 업로드합니다
+ *     description: |
+ *       여러 파일을 WebDAV 서버에 동시에 업로드합니다.
+ *
+ *       **환경별 저장 경로:**
+ *
+ *       - 개발 환경: `/kikii_test/{path}/`
+ *
+ *       - 배포 환경: `/www/{path}/`
  *     tags: [WebDAV]
  *     requestBody:
  *       required: true
@@ -210,7 +232,14 @@ router.post('/upload-multiple', upload.array('files', 10), uploadMultipleFilesTo
  * /webdav/download/{path}:
  *   get:
  *     summary: WebDAV 파일 다운로드
- *     description: WebDAV 서버에서 파일을 다운로드합니다. 파일 바이너리를 직접 반환합니다.
+ *     description: |
+ *       WebDAV 서버에서 파일을 다운로드합니다. 파일 바이너리를 직접 반환합니다.
+ *
+ *       **환경별 저장 경로:**
+ *
+ *       - 개발 환경: `/kikii_test/{path}`에서 파일 조회
+ *
+ *       - 배포 환경: `/www/{path}`에서 파일 조회
  *     tags: [WebDAV]
  *     parameters:
  *       - in: path
@@ -262,7 +291,14 @@ router.get('/download/:path(*)', downloadFileFromWebDAV);
  * /webdav/directory:
  *   post:
  *     summary: WebDAV 디렉토리 생성
- *     description: WebDAV 서버에 디렉토리를 생성합니다
+ *     description: |
+ *       WebDAV 서버에 디렉토리를 생성합니다.
+ *
+ *       **환경별 저장 경로:**
+ *
+ *       - 개발 환경: `/kikii_test/{path}` 디렉토리 생성
+ *
+ *       - 배포 환경: `/www/{path}` 디렉토리 생성
  *     tags: [WebDAV]
  *     requestBody:
  *       required: true

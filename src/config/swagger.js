@@ -7,10 +7,18 @@ const options = {
     info: {
       title: "File Uploader API",
       version: pkg.version,
-      description: "S3 파일 업로드 서버 API 문서",
+      description: `S3 파일 업로드 서버 API 문서
+
+## 환경별 WebDAV 저장 경로
+
+- **배포 환경**: \`/www\` 경로에 파일 저장
+
+- **개발 환경**: \`/kikii_test\` 경로에 파일 저장
+
+환경별 경로는 \`WEBDAV_ROOT_PATH\` 환경 변수로 관리됩니다.`,
       contact: {
-        name: "inseok lee",
-        email: "inseok.lee@example.com",
+        name: "myeongji kim",
+        email: "myeongji.aud0725@kikii.com",
       },
     },
     servers: [
