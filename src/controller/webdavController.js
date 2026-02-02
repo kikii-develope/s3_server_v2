@@ -2,6 +2,7 @@ import {
     getFile,
     createDirectory,
     getBaseUrl,
+    getRootPath,
     uploadMultipleFilesParallel,
     existDirectory,
     uploadSingle,
@@ -22,7 +23,7 @@ import { calculateHash, generateEtag, compareHash, parseIfMatchHeader, formatEta
 /**
  * URL 또는 경로에서 실제 파일 경로만 추출
  * @param {string} input - 전체 URL 또는 경로
- * @returns {string} - /www/ 이후의 실제 경로
+ * @returns {string} - 루트 경로 이후의 실제 경로
  */
 const extractFilePath = (input) => {
     if (!input) return input;
@@ -37,11 +38,13 @@ const extractFilePath = (input) => {
         }
     }
 
-    // /www/로 시작하면 제거
-    if (input.startsWith('/www/')) {
-        input = input.slice(5); // '/www/' 제거
-    } else if (input.startsWith('/www')) {
-        input = input.slice(4); // '/www' 제거
+    const rootPath = getRootPath();
+
+    // /{rootPath}/로 시작하면 제거
+    if (input.startsWith(`/${rootPath}/`)) {
+        input = input.slice(rootPath.length + 2); // '/{rootPath}/' 제거
+    } else if (input.startsWith(`/${rootPath}`)) {
+        input = input.slice(rootPath.length + 1); // '/{rootPath}' 제거
     }
 
     // 앞의 슬래시 제거
@@ -148,7 +151,7 @@ export const downloadFileFromWebDAV = async (req, res) => {
         // URL에서 실제 경로 추출
         const filePath = extractFilePath(rawPath);
 
-        const fullPath = `${getBaseUrl()}/www/${filePath}`;
+        const fullPath = `${getBaseUrl()}/${getRootPath()}/${filePath}`;
 
         const fileBuffer = await getFile(fullPath);
 
@@ -251,7 +254,7 @@ export const getWebDAVDirectory = async (req, res) => {
         // URL에서 실제 경로 추출 및 디코딩
         const dirPath = extractFilePath(decodeURIComponent(rawPath));
 
-        const directory = await existDirectory(`/www/${dirPath}`);
+        const directory = await existDirectory(`/${getRootPath()}/${dirPath}`);
 
         return successResponse(res, 'WebDAV 디렉토리 조회 성공', { path: dirPath, directory });
 
@@ -613,7 +616,7 @@ export const deleteDirectoryFromWebDAV = async (req, res) => {
 
         // force가 false일 때 디렉토리 내용 확인
         if (!force) {
-            const contents = await getDirectoryContents(`/www/${dirPath}`);
+            const contents = await getDirectoryContents(`/${getRootPath()}/${dirPath}`);
 
             if (contents && contents.length > 0) {
                 return errorResponse(res, '디렉토리 내부에 파일이 있습니다. 삭제하려면 force=true를 사용하세요.', 409, {

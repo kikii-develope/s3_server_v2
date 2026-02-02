@@ -12,6 +12,7 @@ import { decodePathTwiceToNFC, decodePathTwiceToNFKC } from "../../utils/decoder
 // });
 
 const webdavUrl = process.env.WEBDAV_URL;
+const webdavRootPath = process.env.WEBDAV_ROOT_PATH || 'www';
 
 /** WebDAV용 경로 정규화 (중복 슬래시 제거, 백슬래시 → 슬래시) */
 const normalizeWebDAVPath = (input) => {
@@ -42,6 +43,7 @@ const client = createClient(
 );
 
 export const getBaseUrl = () => webdavUrl;
+export const getRootPath = () => webdavRootPath;
 
 /**
  * 중복 파일명 처리 - 파일명(1), 파일명(2) 형태로 고유 파일명 생성
@@ -51,7 +53,7 @@ export const getBaseUrl = () => webdavUrl;
  */
 const getUniqueFilename = async (dirPath, filename) => {
   const normalizedPath = dirPath.startsWith('/') ? dirPath : `/${dirPath}`;
-  const contents = await getDirectoryContents(`/www${normalizedPath}`);
+  const contents = await getDirectoryContents(`/${webdavRootPath}${normalizedPath}`);
 
   if (!contents) {
     return filename;
@@ -96,7 +98,7 @@ export const uploadFile = async (path, file, filename) => {
 
   file.originalname = filename;
 
-  const fullPath = `/www/${path}/${filename}`;
+  const fullPath = `/${webdavRootPath}/${path}/${filename}`;
   console.log(`[UPLOAD] 파일 업로드중... [${filename}] (${(file.size / 1024).toFixed(2)} KB)`);
   try {
     const res = await client.putFileContents(fullPath, file.buffer);
@@ -117,7 +119,7 @@ export const uploadFile = async (path, file, filename) => {
  */
 export const createDirectory = async (path) => {
   try {
-    await client.createDirectory(`/www/${path}`);
+    await client.createDirectory(`/${webdavRootPath}/${path}`);
   } catch (error) {
     console.error(error);
     throw error;
@@ -136,7 +138,7 @@ export const uploadSingle = async (path, file, filename) => {
       originalFilename: filename,
       success: true,
       size: f.size,
-      url: getBaseUrl() + `/www/${path}/${f.originalname}`,
+      url: getBaseUrl() + `/${webdavRootPath}/${path}/${f.originalname}`,
       renamed: uniqueFilename !== filename.replace(/ /g, "_")
     };
   } catch (error) {
@@ -167,13 +169,13 @@ export const ensureDirectory = async (path) => {
 
 
     // 1) 이미 있으면 통과
-    const exists = await existDirectory(`/www${next.startsWith('/') ? '' : '/'}${next}`);
+    const exists = await existDirectory(`/${webdavRootPath}${next.startsWith('/') ? '' : '/'}${next}`);
 
 
     if (!exists) {
       try {
 
-        await client.createDirectory(`/www/${next}`);
+        await client.createDirectory(`/${webdavRootPath}/${next}`);
       } catch (err) {
         // 경쟁 상태 혹은 서버별 응답 차이를 관용적으로 처리
         const code = err?.status || err?.statusCode;
@@ -320,7 +322,7 @@ export const uploadMultipleFilesParallel = async (path, files, filenames, concur
           originalFilename: filename,
           success: true,
           size: f.size,
-          url: getBaseUrl() + `/www/${path}/${f.originalname}`,
+          url: getBaseUrl() + `/${webdavRootPath}/${path}/${f.originalname}`,
           msg: wasRenamed ? `중복으로 이름 변경: ${filename} → ${uniqueFilename}` : "신규 생성 완료",
           renamed: wasRenamed
         };
@@ -348,7 +350,7 @@ export const uploadMultipleFilesParallel = async (path, files, filenames, concur
  * @param {string} path - 삭제할 파일 경로
  */
 export const deleteFile = async (path) => {
-  const fullPath = `/www/${path}`.normalize('NFKC');
+  const fullPath = `/${webdavRootPath}/${path}`.normalize('NFKC');
   try {
     await client.deleteFile(fullPath);
   } catch (error) {
@@ -362,7 +364,7 @@ export const deleteFile = async (path) => {
  * @param {string} path - 삭제할 디렉토리 경로
  */
 export const deleteDirectory = async (path) => {
-  const fullPath = `/www/${path}`.normalize('NFKC');
+  const fullPath = `/${webdavRootPath}/${path}`.normalize('NFKC');
   try {
     await client.deleteFile(fullPath);
   } catch (error) {
@@ -378,8 +380,8 @@ export const deleteDirectory = async (path) => {
  * @param {boolean} overwrite - 덮어쓰기 여부 (기본값: true)
  */
 export const moveFile = async (sourcePath, destPath, overwrite = true) => {
-  const src = `/www/${sourcePath}`.normalize('NFKC');
-  const dest = `/www/${destPath}`.normalize('NFKC');
+  const src = `/${webdavRootPath}/${sourcePath}`.normalize('NFKC');
+  const dest = `/${webdavRootPath}/${destPath}`.normalize('NFKC');
   try {
     await client.moveFile(src, dest, { overwrite });
   } catch (error) {
@@ -395,8 +397,8 @@ export const moveFile = async (sourcePath, destPath, overwrite = true) => {
  * @param {boolean} overwrite - 덮어쓰기 여부 (기본값: true)
  */
 export const copyFile = async (sourcePath, destPath, overwrite = true) => {
-  const src = `/www/${sourcePath}`.normalize('NFKC');
-  const dest = `/www/${destPath}`.normalize('NFKC');
+  const src = `/${webdavRootPath}/${sourcePath}`.normalize('NFKC');
+  const dest = `/${webdavRootPath}/${destPath}`.normalize('NFKC');
   try {
     await client.copyFile(src, dest, { overwrite });
   } catch (error) {
@@ -420,7 +422,7 @@ export const updateFile = async (path, file, filename) => {
 
   file.originalname = filename;
 
-  const fullPath = `/www/${path}/${filename}`.normalize('NFKC');
+  const fullPath = `/${webdavRootPath}/${path}/${filename}`.normalize('NFKC');
   console.log(`[UPDATE] 파일 업데이트중... [${filename}] (${(file.size / 1024).toFixed(2)} KB)`);
   try {
     const res = await client.putFileContents(fullPath, file.buffer, { overwrite: true });
