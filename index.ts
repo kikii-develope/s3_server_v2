@@ -34,7 +34,14 @@ const app = express();
 // CORS 설정 로그 출력
 logCorsConfig();
 
-app.use("/swagger-ui.html", swaggerUi.serve, swaggerUi.setup(specs));
+app.use("/swagger-ui.html", swaggerUi.serve, swaggerUi.setup(specs, {
+  swaggerOptions: {
+    persistAuthorization: true,
+    displayRequestDuration: true,
+    filter: true,
+    deepLinking: false, // v4.0 경고 방지
+  }
+}));
 
 // CORS 미들웨어 적용
 app.use(cors(corsOptions));
