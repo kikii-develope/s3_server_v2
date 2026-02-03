@@ -21,39 +21,29 @@ const options = {
         email: "myeongji.aud0725@kikii.com",
       },
     },
-    servers: (() => {
-      const isDevelopment = process.env.NODE_ENV === 'development';
-      const isOnprem = process.env.NODE_ENV === 'onprem';
-
-      const servers = [];
-
-      // 개발 환경: localhost를 첫 번째로
-      if (isDevelopment) {
-        servers.push({
-          url: `http://localhost:${process.env.PORT || 8000}`,
-          description: "Local Development Server (개발)",
-        });
-      }
-
-      // 온프레미스: iptime 서버를 첫 번째로
-      if (isOnprem) {
-        servers.push({
-          url: `http://kikii.iptime.org:${process.env.PORT || 8989}`,
-          description: "On-Premise Server (온프레미스)",
-        });
-      }
-
-      // 운영 서버 (항상 포함)
-      if (!isDevelopment && !isOnprem) {
-        servers.push({
-          url: "https://file-server.kiki-bus.com",
-          description: "Production Server (운영)",
-        });
-      }
-
-      // 개발/온프레미스 환경에서는 다른 서버들도 표시
-      if (isDevelopment || isOnprem) {
-        servers.push(
+    servers: process.env.NODE_ENV === 'production'
+      ? [
+          {
+            url: "https://file-server.kiki-bus.com",
+            description: "Production Server (운영)",
+          }
+        ]
+      : process.env.NODE_ENV === 'onprem'
+      ? [
+          {
+            url: `http://kikii.iptime.org:${process.env.PORT || 8989}`,
+            description: "On-Premise Server (온프레미스)",
+          },
+          {
+            url: "https://file-server.kiki-bus.com",
+            description: "Production Server (운영)",
+          }
+        ]
+      : [
+          {
+            url: `http://localhost:${process.env.PORT || 8000}`,
+            description: "Local Development Server (개발)",
+          },
           {
             url: `http://kikii.iptime.org:${process.env.PORT || 8000}`,
             description: "Development Server (개발)",
@@ -62,11 +52,7 @@ const options = {
             url: "https://file-server.kiki-bus.com",
             description: "Production Server (운영)",
           }
-        );
-      }
-
-      return servers;
-    })(),
+        ],
     components: {
       schemas: {
         FileUploadRequest: {
