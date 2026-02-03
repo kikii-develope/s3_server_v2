@@ -90,7 +90,7 @@ const getUniqueFilename = async (dirPath, filename) => {
 
 export const uploadFile = async (path, file, filename) => {
 
-  filename = filename.replace(/ /g, "_");
+  filename = filename.replace(/ /g, "-");
 
   await ensureDirectory(path);
 
@@ -131,7 +131,7 @@ export const createDirectory = async (path) => {
 export const uploadSingle = async (path, file, filename) => {
   try {
     // 중복 파일명 처리
-    const uniqueFilename = await getUniqueFilename(path, filename.replace(/ /g, "_"));
+    const uniqueFilename = await getUniqueFilename(path, filename.replace(/ /g, "-"));
 
     const { res, file: f } = await uploadFile(path, file, uniqueFilename);
 
@@ -141,7 +141,7 @@ export const uploadSingle = async (path, file, filename) => {
       success: true,
       size: f.size,
       url: getBaseUrl() + `/${webdavRootPath}/${path}/${f.originalname}`,
-      renamed: uniqueFilename !== filename.replace(/ /g, "_")
+      renamed: uniqueFilename !== filename.replace(/ /g, "-")
     };
   } catch (error) {
     return {
@@ -314,8 +314,8 @@ export const uploadMultipleFilesParallel = async (path, files, filenames, concur
 
 
         // 중복 파일명 처리
-        const uniqueFilename = await getUniqueFilename(path, filename.replace(/ /g, "_"));
-        const wasRenamed = uniqueFilename !== filename.replace(/ /g, "_");
+        const uniqueFilename = await getUniqueFilename(path, filename.replace(/ /g, "-"));
+        const wasRenamed = uniqueFilename !== filename.replace(/ /g, "-");
 
         const { res, file: f } = await uploadFile(path, file, uniqueFilename);
 
@@ -416,7 +416,7 @@ export const copyFile = async (sourcePath, destPath, overwrite = true) => {
  * @param {string} filename - 파일명
  */
 export const updateFile = async (path, file, filename) => {
-  filename = filename.replace(/ /g, "_");
+  filename = filename.replace(/ /g, "-");
 
   if (path.startsWith("/")) {
     path = path.replace("/", "");
