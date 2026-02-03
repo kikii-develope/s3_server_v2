@@ -21,6 +21,24 @@ import pool from '../config/database.js';
 import { calculateHash, generateEtag, compareHash, parseIfMatchHeader, formatEtagHeader } from '../utils/etag.js';
 
 /**
+ * multer가 받은 파일명을 올바르게 디코딩
+ * multer는 파일명을 latin1로 디코딩하므로 한글이 깨짐
+ * @param {string} filename - 원본 파일명
+ * @returns {string} - 디코딩된 파일명
+ */
+const decodeFilename = (filename) => {
+    if (!filename) return filename;
+
+    try {
+        // multer는 파일명을 latin1로 디코딩하므로, utf-8로 재인코딩
+        return Buffer.from(filename, 'latin1').toString('utf8');
+    } catch (error) {
+        console.warn('[파일명 디코딩 실패]', filename, error.message);
+        return filename;
+    }
+};
+
+/**
  * URL 또는 경로에서 실제 파일 경로만 추출
  * @param {string} input - 전체 URL 또는 경로
  * @returns {string} - 루트 경로 이후의 실제 경로
@@ -73,8 +91,14 @@ export const uploadFileToWebDAV = async (req, res) => {
             return errorResponse(res, 'path가 필요합니다.', 400);
         }
 
-        // filename이 없으면 file.originalname 사용
-        const uploadFilename = filename || file.originalname;
+        // filename이 없으면 file.originalname 사용 (디코딩 필요)
+        const uploadFilename = filename || decodeFilename(file.originalname);
+
+        console.log('[파일명 처리]', {
+            original: file.originalname,
+            decoded: decodeFilename(file.originalname),
+            final: uploadFilename
+        });
 
         const result = await uploadSingle(path, file, uploadFilename);
 
