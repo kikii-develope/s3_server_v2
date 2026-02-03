@@ -39,6 +39,30 @@ const decodeFilename = (filename) => {
 };
 
 /**
+ * 파일명에 확장자가 없으면 원본 파일의 확장자를 추가
+ * @param {string} filename - 사용자가 입력한 파일명
+ * @param {string} originalname - 원본 파일명
+ * @returns {string} - 확장자가 포함된 파일명
+ */
+const ensureFileExtension = (filename, originalname) => {
+    if (!filename || !originalname) return filename;
+
+    // filename에 확장자가 있는지 확인 (마지막 . 이후에 문자가 있는지)
+    const hasExtension = /\.[^.]+$/.test(filename);
+
+    if (!hasExtension) {
+        // originalname에서 확장자 추출
+        const match = originalname.match(/\.[^.]+$/);
+        if (match) {
+            filename += match[0]; // 확장자 추가
+            console.log(`[확장자 자동 추가] ${filename.replace(match[0], '')} → ${filename}`);
+        }
+    }
+
+    return filename;
+};
+
+/**
  * URL 또는 경로에서 실제 파일 경로만 추출
  * @param {string} input - 전체 URL 또는 경로
  * @returns {string} - 루트 경로 이후의 실제 경로
@@ -92,11 +116,15 @@ export const uploadFileToWebDAV = async (req, res) => {
         }
 
         // filename이 없으면 file.originalname 사용 (디코딩 필요)
-        const uploadFilename = filename || decodeFilename(file.originalname);
+        let uploadFilename = filename || decodeFilename(file.originalname);
+
+        // 확장자가 없으면 원본 파일의 확장자 추가
+        uploadFilename = ensureFileExtension(uploadFilename, decodeFilename(file.originalname));
 
         console.log('[파일명 처리]', {
             original: file.originalname,
             decoded: decodeFilename(file.originalname),
+            input: filename,
             final: uploadFilename
         });
 
