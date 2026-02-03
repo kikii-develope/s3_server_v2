@@ -121,13 +121,6 @@ export const uploadFileToWebDAV = async (req, res) => {
         // 확장자가 없으면 원본 파일의 확장자 추가
         uploadFilename = ensureFileExtension(uploadFilename, decodeFilename(file.originalname));
 
-        console.log('[파일명 처리]', {
-            original: file.originalname,
-            decoded: decodeFilename(file.originalname),
-            input: filename,
-            final: uploadFilename
-        });
-
         const result = await uploadSingle(path, file, uploadFilename);
 
         if (!result.success) {
@@ -354,19 +347,29 @@ export const uploadMultipleFilesToWebDAV = async (req, res) => {
 
         let filenamesArray = [];
 
-        try {
-            if (filenames.startsWith("[") && filenames.endsWith("]")) {
-                filenamesArray = JSON.parse(filenames);
-            } else {
-                filenamesArray = filenames.split(",").map(s => s.trim());
+        // filenames가 없으면 원본 파일명 사용
+        if (!filenames) {
+            filenamesArray = files.map(f => decodeFilename(f.originalname));
+        } else {
+            try {
+                if (filenames.startsWith("[") && filenames.endsWith("]")) {
+                    filenamesArray = JSON.parse(filenames);
+                } else {
+                    filenamesArray = filenames.split(",").map(s => s.trim());
+                }
+            } catch (e) {
+                console.error("filenames 파싱 실패:", e.message);
+                return errorResponse(res, `파일명 배열 형식이 올바르지 않습니다 [${filenames}]`, 400);
             }
-        } catch (e) {
-            console.error("filenames 파싱 실패:", e.message);
-            return errorResponse(res, `파일명 배열 형식이 올바르지 않습니다 [${filenames}]`, 400);
-        }
 
-        if (files.length !== filenamesArray.length) {
-            return errorResponse(res, '파일 개수와 파일명 개수가 동일하지 않습니다.', 400);
+            if (files.length !== filenamesArray.length) {
+                return errorResponse(res, '파일 개수와 파일명 개수가 동일하지 않습니다.', 400);
+            }
+
+            // 각 파일명에 확장자 자동 추가
+            filenamesArray = filenamesArray.map((name, i) =>
+                ensureFileExtension(name, decodeFilename(files[i].originalname))
+            );
         }
 
         if (!path) {

@@ -14,8 +14,6 @@ import { decodePathTwiceToNFC, decodePathTwiceToNFKC } from "../../utils/decoder
 const webdavUrl = process.env.WEBDAV_URL;
 const webdavRootPath = process.env.WEBDAV_ROOT_PATH || 'www';
 
-console.log('[WebDAV Client] WEBDAV_ROOT_PATH:', webdavRootPath);
-
 /** WebDAV용 경로 정규화 (중복 슬래시 제거, 백슬래시 → 슬래시) */
 const normalizeWebDAVPath = (input) => {
   let p = input.replace(/\\/g, "/").replace(/\/+/g, "/");
