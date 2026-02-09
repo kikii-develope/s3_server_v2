@@ -1,9 +1,8 @@
 import express from 'express';
-import multer from 'multer';
+import { upload } from '../config/multer.js';
 import { uploadToS3, uploadMultipleToS3 } from '../controller/s3Controller.js';
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage(), preservePath: false });
 
 /**
  * @swagger

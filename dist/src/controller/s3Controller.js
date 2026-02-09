@@ -8,19 +8,30 @@ const client_s3_1 = require("@aws-sdk/client-s3");
 const date_fns_1 = require("date-fns");
 const s3Client_js_1 = __importDefault(require("../services/s3/s3Client.js"));
 const iconv_lite_1 = __importDefault(require("iconv-lite"));
+const fs_1 = __importDefault(require("fs"));
 const uploadToS3 = async (params) => {
     const { bucketName, path, file } = params;
     try {
         const decodedName = iconv_lite_1.default.decode(Buffer.from(file.originalname, 'latin1'), 'utf-8');
         const fileName = `${(0, date_fns_1.format)(new Date(), 'yyyyMMdd_HHmmss')}_${decodedName}`;
+        // Disk Storage: file.path에서 스트림 생성
+        const fileStream = fs_1.default.createReadStream(file.path);
         const command = new client_s3_1.PutObjectCommand({
             Bucket: bucketName,
             Key: `${path}/${fileName}`,
-            Body: file.buffer,
+            Body: fileStream,
             ContentType: file.mimetype,
             ACL: 'public-read',
         });
         await s3Client_js_1.default.send(command);
+        // 업로드 완료 후 로컬 임시 파일 삭제
+        try {
+            await fs_1.default.promises.unlink(file.path);
+            console.log(`[S3] 로컬 임시 파일 삭제: ${file.path}`);
+        }
+        catch (err) {
+            console.warn(`[S3] 임시 파일 삭제 실패 (무시): ${err.message}`);
+        }
         const url = `https://${bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${path}/${fileName}`;
         return {
             success: true,
@@ -31,6 +42,11 @@ const uploadToS3 = async (params) => {
     }
     catch (error) {
         console.error('S3 업로드 에러:', error);
+        // 실패시 로컬 임시 파일 삭제
+        try {
+            await fs_1.default.promises.unlink(file.path);
+        }
+        catch { }
         throw new Error('파일 업로드 중 오류가 발생했습니다.:: ' + error);
     }
 };

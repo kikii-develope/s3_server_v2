@@ -38,16 +38,57 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getWebDAVStats = exports.copyFileInWebDAV = exports.moveFileInWebDAV = exports.deleteDirectoryFromWebDAV = exports.deleteFileFromWebDAV = exports.updateFileInWebDAV = exports.uploadMultipleFilesToWebDAV = exports.getWebDAVInfo = exports.getWebDAVDirectory = exports.createWebDAVDirectory = exports.downloadFileFromWebDAV = exports.uploadFileToWebDAV = void 0;
 const webdavClient_js_1 = require("../services/web_dav/webdavClient.js");
+const multipartUpload_js_1 = require("../services/web_dav/multipartUpload.js");
 const mime_types_1 = __importDefault(require("mime-types"));
 const response_js_1 = require("../utils/response.js");
 const fileMetadataRepo = __importStar(require("../repositories/fileMetadataRepo.js"));
 const fileHistoryRepo = __importStar(require("../repositories/fileHistoryRepo.js"));
 const database_js_1 = __importDefault(require("../config/database.js"));
 const etag_js_1 = require("../utils/etag.js");
+const path_1 = __importDefault(require("path"));
+/**
+ * multer가 받은 파일명을 올바르게 디코딩
+ * multer는 파일명을 latin1로 디코딩하므로 한글이 깨짐
+ * @param {string} filename - 원본 파일명
+ * @returns {string} - 디코딩된 파일명
+ */
+const decodeFilename = (filename) => {
+    if (!filename)
+        return filename;
+    try {
+        // multer는 파일명을 latin1로 디코딩하므로, utf-8로 재인코딩
+        return Buffer.from(filename, 'latin1').toString('utf8');
+    }
+    catch (error) {
+        console.warn('[파일명 디코딩 실패]', filename, error.message);
+        return filename;
+    }
+};
+/**
+ * 파일명에 확장자가 없으면 원본 파일의 확장자를 추가
+ * @param {string} filename - 사용자가 입력한 파일명
+ * @param {string} originalname - 원본 파일명
+ * @returns {string} - 확장자가 포함된 파일명
+ */
+const ensureFileExtension = (filename, originalname) => {
+    if (!filename || !originalname)
+        return filename;
+    // filename에 확장자가 있는지 확인 (마지막 . 이후에 문자가 있는지)
+    const hasExtension = /\.[^.]+$/.test(filename);
+    if (!hasExtension) {
+        // originalname에서 확장자 추출
+        const match = originalname.match(/\.[^.]+$/);
+        if (match) {
+            filename += match[0]; // 확장자 추가
+            console.log(`[확장자 자동 추가] ${filename.replace(match[0], '')} → ${filename}`);
+        }
+    }
+    return filename;
+};
 /**
  * URL 또는 경로에서 실제 파일 경로만 추출
  * @param {string} input - 전체 URL 또는 경로
- * @returns {string} - /www/ 이후의 실제 경로
+ * @returns {string} - 루트 경로 이후의 실제 경로
  */
 const extractFilePath = (input) => {
     if (!input)
@@ -62,12 +103,13 @@ const extractFilePath = (input) => {
             // URL 파싱 실패시 그대로 사용
         }
     }
-    // /www/로 시작하면 제거
-    if (input.startsWith('/www/')) {
-        input = input.slice(5); // '/www/' 제거
+    const rootPath = (0, webdavClient_js_1.getRootPath)();
+    // /{rootPath}/로 시작하면 제거
+    if (input.startsWith(`/${rootPath}/`)) {
+        input = input.slice(rootPath.length + 2); // '/{rootPath}/' 제거
     }
-    else if (input.startsWith('/www')) {
-        input = input.slice(4); // '/www' 제거
+    else if (input.startsWith(`/${rootPath}`)) {
+        input = input.slice(rootPath.length + 1); // '/{rootPath}' 제거
     }
     // 앞의 슬래시 제거
     if (input.startsWith('/')) {
@@ -76,37 +118,55 @@ const extractFilePath = (input) => {
     return input;
 };
 /**
- * WebDAV 파일 업로드 컨트롤러
+ * WebDAV 파일 업로드 컨트롤러 (Disk Storage + 청크 업로드)
  * @param {Object} req - Express request 객체
  * @param {Object} res - Express response 객체
  */
 const uploadFileToWebDAV = async (req, res) => {
+    // 시작 시간 및 메모리 측정
+    const startTime = Date.now();
+    const startMemory = process.memoryUsage();
     try {
-        const { path, filename, domain_type, domain_id, userId } = req.body;
+        const { path: uploadPath, filename, domain_type, domain_id, userId } = req.body;
         const file = req.file;
         if (!file) {
             return (0, response_js_1.errorResponse)(res, '파일이 없습니다.', 400);
         }
-        if (!path) {
+        if (!uploadPath) {
             return (0, response_js_1.errorResponse)(res, 'path가 필요합니다.', 400);
         }
-        // filename이 없으면 file.originalname 사용
-        const uploadFilename = filename || file.originalname;
-        const result = await (0, webdavClient_js_1.uploadSingle)(path, file, uploadFilename);
-        if (!result.success) {
-            return (0, response_js_1.errorResponse)(res, result.error || '파일 업로드 실패', 500);
-        }
+        // filename이 없으면 file.originalname 사용 (디코딩 필요)
+        let uploadFilename = filename || decodeFilename(file.originalname);
+        // 확장자가 없으면 원본 파일의 확장자 추가
+        uploadFilename = ensureFileExtension(uploadFilename, decodeFilename(file.originalname));
+        console.log(`[UPLOAD] 파일: ${uploadFilename} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
+        console.log(`[UPLOAD] 임시 파일 경로: ${file.path}`);
+        // 진행률 콜백
+        const onProgress = (progress) => {
+            if (progress.type === 'single') {
+                console.log(`[PROGRESS] ${progress.percentage}%`);
+            }
+            else if (progress.type === 'multipart') {
+                console.log(`[PROGRESS] 청크 ${progress.uploadedChunks}/${progress.totalChunks} (${progress.percentage}%)`);
+            }
+        };
+        // 청크 업로드 (100MB 이상이면 자동으로 청크 분할)
+        const result = await (0, multipartUpload_js_1.uploadLargeFile)(uploadPath, file, uploadFilename, onProgress);
         // 파일 정보 추출
         const actualFilename = result.filename;
         const extension = actualFilename.includes('.')
             ? actualFilename.split('.').pop()?.toLowerCase()
             : '';
-        const filePath = `${path}/${actualFilename}`;
+        const filePath = `${uploadPath}/${actualFilename}`;
         const mimeType = file.mimetype || mime_types_1.default.lookup(extension) || 'application/octet-stream';
-        // contentHash와 ETag 생성
-        const contentHash = (0, etag_js_1.calculateHash)(file.buffer);
+        // contentHash와 ETag 생성 (스트림 방식)
+        const contentHash = await (0, multipartUpload_js_1.calculateHashFromFile)(file.path);
         const etag = (0, etag_js_1.generateEtag)(contentHash);
-        // file_metadata INSERT
+        // 로컬 임시 파일 삭제
+        await (0, multipartUpload_js_1.deleteLocalFile)(file.path);
+        // file_metadata에 새로운 파일로 INSERT
+        // (중복 파일명은 uploadLargeFile에서 자동으로 파일명(1).pdf 형태로 변경되어 처리됨)
+        console.log(`[DB] 새 파일 메타데이터 생성: ${filePath}`);
         const metadata = await fileMetadataRepo.create({
             domainType: domain_type || null,
             domainId: domain_id ? parseInt(domain_id) : null,
@@ -119,7 +179,7 @@ const uploadFileToWebDAV = async (req, res) => {
             etag: etag,
             status: 'ACTIVE'
         });
-        // history 기록
+        // history 기록 (UPLOAD)
         await fileHistoryRepo.create({
             fileMetadataId: metadata.id,
             action: 'UPLOAD',
@@ -129,24 +189,63 @@ const uploadFileToWebDAV = async (req, res) => {
             newHash: contentHash,
             changedBy: userId || 'system'
         });
+        // 종료 시간 및 메모리 측정
+        const endTime = Date.now();
+        const endMemory = process.memoryUsage();
+        const duration = ((endTime - startTime) / 1000).toFixed(2);
+        const fileSizeMB = (file.size / 1024 / 1024).toFixed(2);
+        const uploadSpeedMBps = (file.size / 1024 / 1024 / (duration)).toFixed(2);
+        // 메모리 사용량 (MB 단위)
+        const memoryUsedMB = (endMemory.heapUsed / 1024 / 1024).toFixed(2);
+        const memoryIncreaseMB = ((endMemory.heapUsed - startMemory.heapUsed) / 1024 / 1024).toFixed(2);
+        const memoryTotalMB = (endMemory.heapTotal / 1024 / 1024).toFixed(2);
+        const rssMemoryMB = (endMemory.rss / 1024 / 1024).toFixed(2);
+        // 통계 로그 출력
+        console.log('\n┌─────────────────────────────────────────────────────────────');
+        console.log('│ 📊 업로드 완료 통계');
+        console.log('├─────────────────────────────────────────────────────────────');
+        console.log(`│ 파일명: ${actualFilename}`);
+        console.log(`│ 파일 크기: ${fileSizeMB} MB`);
+        console.log(`│ 업로드 방식: ${result.uploadType === 'multipart' ? `청크 업로드 (${result.chunks}개)` : '단일 업로드'}`);
+        console.log('├─────────────────────────────────────────────────────────────');
+        console.log(`│ ⏱️  소요 시간: ${duration}초`);
+        console.log(`│ 🚀 업로드 속도: ${uploadSpeedMBps} MB/s`);
+        console.log('├─────────────────────────────────────────────────────────────');
+        console.log(`│ 💾 힙 메모리 사용: ${memoryUsedMB} MB (전체: ${memoryTotalMB} MB)`);
+        console.log(`│ 📈 메모리 증가: ${memoryIncreaseMB >= 0 ? '+' : ''}${memoryIncreaseMB} MB`);
+        console.log(`│ 🖥️  RSS 메모리: ${rssMemoryMB} MB`);
+        console.log('└─────────────────────────────────────────────────────────────\n');
         res.set('ETag', (0, etag_js_1.formatEtagHeader)(etag));
         return (0, response_js_1.successResponse)(res, 'WebDAV 파일 업로드 성공', {
-            path: `${(0, webdavClient_js_1.getBaseUrl)()}/${filePath}`,
+            path: `${(0, webdavClient_js_1.getBaseUrl)()}/${(0, webdavClient_js_1.getRootPath)()}/${filePath}`,
             filename: result.filename,
             size: result.size,
             url: result.url,
+            uploadType: result.uploadType, // 'single' 또는 'multipart'
+            chunks: result.chunks, // 청크 업로드시만
             etag: etag,
-            metadataId: metadata.id
+            metadataId: metadata.id,
+            // 통계 정보 추가
+            stats: {
+                durationSeconds: parseFloat(duration),
+                uploadSpeedMBps: parseFloat(uploadSpeedMBps),
+                memoryUsedMB: parseFloat(memoryUsedMB),
+                memoryIncreaseMB: parseFloat(memoryIncreaseMB)
+            }
         });
     }
     catch (error) {
         console.error('WebDAV 업로드 에러:', error);
+        // 실패시 로컬 임시 파일 정리
+        if (req.file?.path) {
+            await (0, multipartUpload_js_1.deleteLocalFile)(req.file.path);
+        }
         return (0, response_js_1.errorResponse)(res, error.message);
     }
 };
 exports.uploadFileToWebDAV = uploadFileToWebDAV;
 /**
- * WebDAV 파일 다운로드 컨트롤러
+ * WebDAV 파일 다운로드 컨트롤러 (스트리밍 방식)
  * @param {Object} req - Express request 객체
  * @param {Object} res - Express response 객체
  */
@@ -158,21 +257,20 @@ const downloadFileFromWebDAV = async (req, res) => {
         }
         // URL에서 실제 경로 추출
         const filePath = extractFilePath(rawPath);
-        const fullPath = `${(0, webdavClient_js_1.getBaseUrl)()}/www/${filePath}`;
-        const fileBuffer = await (0, webdavClient_js_1.getFile)(fullPath);
-        if (!fileBuffer) {
-            return (0, response_js_1.errorResponse)(res, '파일이 없습니다.', 404);
-        }
         const filename = filePath.split('/').pop() || 'download';
-        const extension = filePath.split('.').pop()?.toLowerCase();
-        // file_metadata 조회 또는 lazy 생성
+        const extension = path_1.default.extname(filename).slice(1).toLowerCase();
+        // file_metadata 조회
         let metadata = await fileMetadataRepo.findByFilePath(filePath);
-        let etag = null;
         if (!metadata) {
-            // lazy INSERT (B-lite 스캔 전 또는 누락된 파일)
+            // 파일이 DB에 없으면 lazy 생성
+            const fullPath = `${(0, webdavClient_js_1.getBaseUrl)()}/${(0, webdavClient_js_1.getRootPath)()}/${filePath}`;
+            const fileBuffer = await (0, webdavClient_js_1.getFile)(fullPath);
+            if (!fileBuffer) {
+                return (0, response_js_1.errorResponse)(res, '파일을 찾을 수 없습니다.', 404);
+            }
             const mimeType = mime_types_1.default.lookup(extension) || 'application/octet-stream';
             const contentHash = (0, etag_js_1.calculateHash)(fileBuffer);
-            etag = (0, etag_js_1.generateEtag)(contentHash);
+            const etag = (0, etag_js_1.generateEtag)(contentHash);
             metadata = await fileMetadataRepo.create({
                 filePath: filePath,
                 fileName: filename,
@@ -186,27 +284,66 @@ const downloadFileFromWebDAV = async (req, res) => {
         }
         else if (!metadata.etag) {
             // ETag가 없으면 lazy 생성
+            const fullPath = `${(0, webdavClient_js_1.getBaseUrl)()}/${(0, webdavClient_js_1.getRootPath)()}/${filePath}`;
+            const fileBuffer = await (0, webdavClient_js_1.getFile)(fullPath);
             const contentHash = metadata.content_hash || (0, etag_js_1.calculateHash)(fileBuffer);
-            etag = (0, etag_js_1.generateEtag)(contentHash);
+            const etag = (0, etag_js_1.generateEtag)(contentHash);
             await fileMetadataRepo.updateEtagAndHash(metadata.id, etag, contentHash);
-        }
-        else {
-            etag = metadata.etag;
+            metadata.etag = etag;
         }
         // 파일 타입별 처리
-        let contentType = mime_types_1.default.lookup(extension) || 'application/octet-stream';
+        let contentType = metadata.mime_type || mime_types_1.default.lookup(extension) || 'application/octet-stream';
         let contentDisposition = req.query.disposition || 'inline';
         if (['txt', 'json', 'xml', 'html', 'css', 'js'].includes(extension)) {
             contentType = 'text/plain';
         }
+        // Range 요청 지원 (이어받기)
+        const range = req.headers.range;
+        const fileSize = metadata.file_size;
+        // 기본 헤더 설정
         res.set({
             'Content-Type': contentType,
             'Content-Disposition': `${contentDisposition}; filename*=UTF-8''${encodeURIComponent(filename)}`,
-            'Content-Length': fileBuffer.length,
-            'Cache-Control': 'no-store',
-            'ETag': (0, etag_js_1.formatEtagHeader)(etag)
+            'ETag': (0, etag_js_1.formatEtagHeader)(metadata.etag),
+            'Accept-Ranges': 'bytes',
+            'Cache-Control': 'public, max-age=31536000' // 1년 캐싱
         });
-        return res.status(200).send(fileBuffer);
+        const fullPath = `${(0, webdavClient_js_1.getBaseUrl)()}/${(0, webdavClient_js_1.getRootPath)()}/${filePath}`;
+        if (range) {
+            // Range 요청 처리 (부분 다운로드)
+            const parts = range.replace(/bytes=/, '').split('-');
+            const start = parseInt(parts[0], 10);
+            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+            if (start >= fileSize || end >= fileSize) {
+                res.status(416).set('Content-Range', `bytes */${fileSize}`);
+                return res.end();
+            }
+            const chunkSize = end - start + 1;
+            res.status(206); // Partial Content
+            res.set({
+                'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                'Content-Length': chunkSize
+            });
+            console.log(`[DOWNLOAD] Range 요청: ${filename} (${start}-${end}/${fileSize})`);
+            // 부분 스트림 다운로드 (Range 지원)
+            // WebDAV 클라이언트가 Range를 지원하지 않을 수 있으므로 전체 다운로드 후 슬라이스
+            const fileBuffer = await (0, webdavClient_js_1.getFile)(fullPath);
+            const chunk = fileBuffer.slice(start, end + 1);
+            return res.send(chunk);
+        }
+        else {
+            // 전체 파일 스트리밍
+            res.set('Content-Length', fileSize);
+            console.log(`[DOWNLOAD] 스트리밍: ${filename} (${(fileSize / 1024 / 1024).toFixed(2)}MB)`);
+            // 스트림 방식으로 다운로드
+            // 주의: webdav 라이브러리는 스트림을 직접 반환하지 않으므로 버퍼 사용
+            // 향후 개선: createReadStream 구현
+            const fileBuffer = await (0, webdavClient_js_1.getFile)(fullPath);
+            if (!fileBuffer) {
+                return (0, response_js_1.errorResponse)(res, '파일을 찾을 수 없습니다.', 404);
+            }
+            return res.status(200).send(fileBuffer);
+        }
     }
     catch (error) {
         console.error('WebDAV 다운로드 에러:', error);
@@ -248,7 +385,7 @@ const getWebDAVDirectory = async (req, res) => {
         }
         // URL에서 실제 경로 추출 및 디코딩
         const dirPath = extractFilePath(decodeURIComponent(rawPath));
-        const directory = await (0, webdavClient_js_1.existDirectory)(`/www/${dirPath}`);
+        const directory = await (0, webdavClient_js_1.existDirectory)(`/${(0, webdavClient_js_1.getRootPath)()}/${dirPath}`);
         return (0, response_js_1.successResponse)(res, 'WebDAV 디렉토리 조회 성공', { path: dirPath, directory });
     }
     catch (error) {
@@ -277,42 +414,87 @@ const getWebDAVInfo = async (req, res) => {
 };
 exports.getWebDAVInfo = getWebDAVInfo;
 /**
- * 다중 파일 WebDAV 업로드 컨트롤러
+ * 다중 파일 WebDAV 업로드 컨트롤러 (Disk Storage + 청크 업로드)
  * @param {Object} req - Express request 객체
  * @param {Object} res - Express response 객체
  */
 const uploadMultipleFilesToWebDAV = async (req, res) => {
     try {
-        const { path, filenames } = req.body;
-        const files = req.files; // multer에서 다중 파일 설정 필요
+        const { path: uploadPath, filenames } = req.body;
+        const files = req.files;
         if (!files || files.length === 0) {
             return (0, response_js_1.errorResponse)(res, '파일이 없습니다.', 400);
         }
-        let filenamesArray = [];
-        try {
-            if (filenames.startsWith("[") && filenames.endsWith("]")) {
-                filenamesArray = JSON.parse(filenames);
-            }
-            else {
-                filenamesArray = filenames.split(",").map(s => s.trim());
-            }
-        }
-        catch (e) {
-            console.error("filenames 파싱 실패:", e.message);
-            return (0, response_js_1.errorResponse)(res, `파일명 배열 형식이 올바르지 않습니다 [${filenames}]`, 400);
-        }
-        if (files.length !== filenamesArray.length) {
-            return (0, response_js_1.errorResponse)(res, '파일 개수와 파일명 개수가 동일하지 않습니다.', 400);
-        }
-        if (!path) {
+        if (!uploadPath) {
             return (0, response_js_1.errorResponse)(res, 'path가 필요합니다.', 400);
         }
-        // 병렬 업로드 실행 (동시성 제한: 3개)
-        const results = await (0, webdavClient_js_1.uploadMultipleFilesParallel)(path, files, filenamesArray, 3);
+        let filenamesArray = [];
+        // filenames가 없으면 원본 파일명 사용
+        if (!filenames) {
+            filenamesArray = files.map(f => decodeFilename(f.originalname));
+        }
+        else {
+            try {
+                if (filenames.startsWith("[") && filenames.endsWith("]")) {
+                    filenamesArray = JSON.parse(filenames);
+                }
+                else {
+                    filenamesArray = filenames.split(",").map(s => s.trim());
+                }
+            }
+            catch (e) {
+                console.error("filenames 파싱 실패:", e.message);
+                return (0, response_js_1.errorResponse)(res, `파일명 배열 형식이 올바르지 않습니다 [${filenames}]`, 400);
+            }
+            if (files.length !== filenamesArray.length) {
+                return (0, response_js_1.errorResponse)(res, '파일 개수와 파일명 개수가 동일하지 않습니다.', 400);
+            }
+            // 각 파일명에 확장자 자동 추가
+            filenamesArray = filenamesArray.map((name, i) => ensureFileExtension(name, decodeFilename(files[i].originalname)));
+        }
+        console.log(`[MULTI-UPLOAD] ${files.length}개 파일 업로드 시작`);
+        // 동시성 제한하여 병렬 업로드 (5개씩)
+        const CONCURRENCY = 5;
+        const results = [];
+        for (let i = 0; i < files.length; i += CONCURRENCY) {
+            const batch = files.slice(i, i + CONCURRENCY);
+            const batchFilenames = filenamesArray.slice(i, i + CONCURRENCY);
+            const batchPromises = batch.map(async (file, index) => {
+                try {
+                    const filename = batchFilenames[index];
+                    const result = await (0, multipartUpload_js_1.uploadLargeFile)(uploadPath, file, filename);
+                    // 로컬 임시 파일 삭제
+                    await (0, multipartUpload_js_1.deleteLocalFile)(file.path);
+                    return {
+                        filename: result.filename,
+                        originalFilename: filename,
+                        success: true,
+                        size: result.size,
+                        url: result.url,
+                        uploadType: result.uploadType,
+                        chunks: result.chunks
+                    };
+                }
+                catch (error) {
+                    console.error(`[MULTI-UPLOAD] ${file.originalname} 실패:`, error.message);
+                    // 실패시 로컬 임시 파일 삭제
+                    await (0, multipartUpload_js_1.deleteLocalFile)(file.path);
+                    return {
+                        filename: file.originalname,
+                        success: false,
+                        error: error.message
+                    };
+                }
+            });
+            const batchResults = await Promise.all(batchPromises);
+            results.push(...batchResults);
+            console.log(`[MULTI-UPLOAD] 진행중... ${Math.min(i + CONCURRENCY, files.length)}/${files.length}개 완료`);
+        }
         const successCount = results.filter(r => r.success).length;
         const failCount = results.length - successCount;
+        console.log(`[MULTI-UPLOAD] 완료: ${successCount}개 성공, ${failCount}개 실패`);
         return (0, response_js_1.successResponse)(res, `다중 파일 업로드 완료: ${successCount}개 성공, ${failCount}개 실패`, {
-            path,
+            path: uploadPath,
             results,
             summary: {
                 total: results.length,
@@ -323,6 +505,12 @@ const uploadMultipleFilesToWebDAV = async (req, res) => {
     }
     catch (error) {
         console.error('WebDAV 다중 업로드 에러:', error);
+        // 실패시 모든 로컬 임시 파일 정리
+        if (req.files) {
+            for (const file of req.files) {
+                await (0, multipartUpload_js_1.deleteLocalFile)(file.path);
+            }
+        }
         return (0, response_js_1.errorResponse)(res, error.message);
     }
 };
@@ -444,11 +632,13 @@ const updateFileInWebDAV = async (req, res) => {
                 etag: metadata.etag
             });
         }
-        // 새 파일 해시 계산
-        const newContentHash = (0, etag_js_1.calculateHash)(file.buffer);
+        // 새 파일 해시 계산 (스트림 방식)
+        const newContentHash = await (0, multipartUpload_js_1.calculateHashFromFile)(file.path);
         const oldContentHash = metadata.content_hash || (0, etag_js_1.calculateHash)(existingFileBuffer);
         // 콘텐츠 해시 비교 (동일하면 업데이트 불필요)
         if ((0, etag_js_1.compareHash)(oldContentHash, newContentHash)) {
+            // 동일한 파일이므로 로컬 임시 파일 삭제
+            await (0, multipartUpload_js_1.deleteLocalFile)(file.path);
             res.set('ETag', (0, etag_js_1.formatEtagHeader)(metadata.etag));
             return (0, response_js_1.successResponse)(res, '파일이 동일하여 변경 없음', {
                 path: actualFilePath,
@@ -459,6 +649,8 @@ const updateFileInWebDAV = async (req, res) => {
         }
         // 파일 업데이트 실행
         const { res: result, file: f } = await (0, webdavClient_js_1.updateFile)(directoryPath, file, filename);
+        // 로컬 임시 파일 삭제
+        await (0, multipartUpload_js_1.deleteLocalFile)(file.path);
         // 새 ETag 생성
         const newEtag = (0, etag_js_1.generateEtag)(newContentHash);
         const oldEtag = metadata.etag;
@@ -483,13 +675,17 @@ const updateFileInWebDAV = async (req, res) => {
             path: actualFilePath,
             filename: f.originalname,
             size: f.size,
-            url: `${(0, webdavClient_js_1.getBaseUrl)()}/${directoryPath}/${f.originalname}`,
+            url: `${(0, webdavClient_js_1.getBaseUrl)()}/${(0, webdavClient_js_1.getRootPath)()}/${directoryPath}/${f.originalname}`,
             etag: newEtag,
             changed: true
         });
     }
     catch (error) {
         console.error('WebDAV 파일 업데이트 에러:', error);
+        // 실패시 로컬 임시 파일 정리
+        if (req.file?.path) {
+            await (0, multipartUpload_js_1.deleteLocalFile)(req.file.path);
+        }
         if (error.status === 404 || error.message?.includes('not found')) {
             return (0, response_js_1.errorResponse)(res, '파일을 찾을 수 없습니다.', 404);
         }
@@ -555,7 +751,7 @@ const deleteDirectoryFromWebDAV = async (req, res) => {
         const dirPath = extractFilePath(rawPath);
         // force가 false일 때 디렉토리 내용 확인
         if (!force) {
-            const contents = await (0, webdavClient_js_1.getDirectoryContents)(`/www/${dirPath}`);
+            const contents = await (0, webdavClient_js_1.getDirectoryContents)(`/${(0, webdavClient_js_1.getRootPath)()}/${dirPath}`);
             if (contents && contents.length > 0) {
                 return (0, response_js_1.errorResponse)(res, '디렉토리 내부에 파일이 있습니다. 삭제하려면 force=true를 사용하세요.', 409, {
                     path: dirPath,

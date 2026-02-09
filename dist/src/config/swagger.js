@@ -12,20 +12,52 @@ const options = {
         info: {
             title: "File Uploader API",
             version: appInfo_js_1.pkg.version,
-            description: "S3 파일 업로드 서버 API 문서",
+            description: `S3 파일 업로드 서버 API 문서
+
+## 환경별 WebDAV 저장 경로
+
+- **배포 환경**: \`/www\` 경로에 파일 저장
+
+- **개발 환경**: \`/kikii_test\` 경로에 파일 저장
+
+환경별 경로는 \`WEBDAV_ROOT_PATH\` 환경 변수로 관리됩니다.`,
             contact: {
-                name: "inseok lee",
-                email: "inseok.lee@example.com",
+                name: "myeongji kim",
+                email: "myeongji.aud0725@kikii.com",
             },
         },
-        servers: [
-            {
-                url: process.env.PORT == 80
-                    ? "https://file-server.kiki-bus.com"
-                    : `http://kikii.iptime.org:${process.env.PORT || 8000}`,
-                description: "Development server",
-            },
-        ],
+        servers: process.env.NODE_ENV === 'production'
+            ? [
+                {
+                    url: "https://file-server.kiki-bus.com",
+                    description: "Production Server (운영)",
+                }
+            ]
+            : process.env.NODE_ENV === 'onprem'
+                ? [
+                    {
+                        url: `http://kikii.iptime.org:${process.env.PORT || 8989}`,
+                        description: "On-Premise Server (온프레미스)",
+                    },
+                    {
+                        url: "https://file-server.kiki-bus.com",
+                        description: "Production Server (운영)",
+                    }
+                ]
+                : [
+                    {
+                        url: `http://localhost:${process.env.PORT || 8000}`,
+                        description: "Local Development Server (개발)",
+                    },
+                    {
+                        url: `http://kikii.iptime.org:${process.env.PORT || 8000}`,
+                        description: "Development Server (개발)",
+                    },
+                    {
+                        url: "https://file-server.kiki-bus.com",
+                        description: "Production Server (운영)",
+                    }
+                ],
         components: {
             schemas: {
                 FileUploadRequest: {

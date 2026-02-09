@@ -8,7 +8,8 @@
  *
  * 사용법: node src/scripts/scanNasFiles.js [시작경로]
  * 예시: node src/scripts/scanNasFiles.js /
- *       node src/scripts/scanNasFiles.js /www
+ *       node src/scripts/scanNasFiles.js /www (배포 환경)
+ *       node src/scripts/scanNasFiles.js /kikii_test (개발 환경)
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
