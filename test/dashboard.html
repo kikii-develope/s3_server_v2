@@ -1,0 +1,1731 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebDAV Test Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-deep: #0B0F1A;
+    --bg-base: #0F172A;
+    --bg-surface: #1E293B;
+    --bg-elevated: #334155;
+    --glass: rgba(30, 41, 59, 0.6);
+    --glass-border: rgba(148, 163, 184, 0.15);
+    --text-primary: #F8FAFC;
+    --text-secondary: #94A3B8;
+    --text-muted: #64748B;
+    --green: #22C55E;
+    --green-dim: rgba(34, 197, 94, 0.15);
+    --blue: #3B82F6;
+    --blue-dim: rgba(59, 130, 246, 0.15);
+    --red: #EF4444;
+    --red-dim: rgba(239, 68, 68, 0.15);
+    --yellow: #EAB308;
+    --yellow-dim: rgba(234, 179, 8, 0.15);
+    --purple: #A855F7;
+    --purple-dim: rgba(168, 85, 247, 0.15);
+    --cyan: #06B6D4;
+    --cyan-dim: rgba(6, 182, 212, 0.15);
+    --orange: #F97316;
+    --orange-dim: rgba(249, 115, 22, 0.15);
+    --radius: 12px;
+    --radius-sm: 8px;
+    --radius-lg: 16px;
+    --blur: 20px;
+    --transition: 200ms ease;
+    --font-sans: 'Fira Sans', -apple-system, sans-serif;
+    --font-mono: 'Fira Code', monospace;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg-deep);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+  }
+
+  /* ─── Scrollbar ─────────────── */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--bg-elevated); border-radius: 3px; }
+
+  /* ─── Animated BG ───────────── */
+  .bg-grid {
+    position: fixed; inset: 0; z-index: 0;
+    background-image:
+      linear-gradient(rgba(59, 130, 246, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    animation: gridMove 20s linear infinite;
+  }
+
+  @keyframes gridMove {
+    0% { transform: translate(0, 0); }
+    100% { transform: translate(60px, 60px); }
+  }
+
+  .bg-glow {
+    position: fixed; z-index: 0;
+    width: 600px; height: 600px;
+    border-radius: 50%;
+    filter: blur(120px);
+    opacity: 0.15;
+    animation: glowFloat 15s ease-in-out infinite;
+  }
+
+  .bg-glow-1 { top: -200px; left: -200px; background: var(--blue); }
+  .bg-glow-2 { bottom: -200px; right: -200px; background: var(--purple); animation-delay: -7s; }
+
+  @keyframes glowFloat {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    50% { transform: translate(40px, 30px) scale(1.1); }
+  }
+
+  /* ─── Layout ────────────────── */
+  .container { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+  /* ─── Topbar ────────────────── */
+  .topbar {
+    display: flex; align-items: center; gap: 16px; padding: 16px 20px;
+    background: var(--glass); backdrop-filter: blur(var(--blur));
+    border: 1px solid var(--glass-border); border-radius: var(--radius-lg);
+    margin-bottom: 20px;
+    animation: slideDown 0.5s ease-out;
+  }
+
+  @keyframes slideDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+
+  .topbar-brand {
+    font-family: var(--font-mono); font-weight: 700; font-size: 15px;
+    color: var(--green); white-space: nowrap;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .server-input {
+    flex: 1; max-width: 400px;
+    background: var(--bg-base); border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm); padding: 8px 12px;
+    font-family: var(--font-mono); font-size: 12px; color: var(--text-primary);
+    outline: none; transition: border-color var(--transition);
+  }
+  .server-input:focus { border-color: var(--blue); }
+
+  .status-pill {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 14px; border-radius: 20px;
+    font-size: 12px; font-weight: 600; white-space: nowrap;
+    transition: all 0.3s ease;
+  }
+  .status-pill.ok { background: var(--green-dim); color: var(--green); }
+  .status-pill.err { background: var(--red-dim); color: var(--red); }
+  .status-pill.checking { background: var(--yellow-dim); color: var(--yellow); }
+
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .status-pill.ok .status-dot { animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  .btn {
+    padding: 8px 16px; border: none; border-radius: var(--radius-sm);
+    font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: all var(--transition); font-family: var(--font-sans);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  .btn-blue { background: var(--blue); color: white; }
+  .btn-blue:hover:not(:disabled) { background: #2563EB; box-shadow: 0 4px 20px rgba(59,130,246,0.3); }
+  .btn-green { background: var(--green); color: #0B0F1A; }
+  .btn-green:hover:not(:disabled) { background: #16A34A; box-shadow: 0 4px 20px rgba(34,197,94,0.3); }
+  .btn-ghost { background: var(--bg-elevated); color: var(--text-primary); }
+  .btn-ghost:hover:not(:disabled) { background: #475569; }
+  .btn-red { background: var(--red-dim); color: var(--red); }
+  .btn-red:hover:not(:disabled) { background: var(--red); color: white; }
+
+  /* ─── Tabs ──────────────────── */
+  .tabs {
+    display: flex; gap: 4px; padding: 4px;
+    background: var(--bg-base); border-radius: var(--radius);
+    margin-bottom: 20px; width: fit-content;
+    animation: slideDown 0.5s ease-out 0.1s both;
+  }
+
+  .tab {
+    padding: 10px 20px; border: none; background: transparent;
+    color: var(--text-muted); font-size: 13px; font-weight: 500;
+    font-family: var(--font-sans); border-radius: var(--radius-sm);
+    cursor: pointer; transition: all var(--transition);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .tab:hover { color: var(--text-secondary); }
+  .tab.active {
+    background: var(--bg-surface); color: var(--text-primary);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+
+  .tab-content { display: none; animation: fadeIn 0.3s ease; }
+  .tab-content.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* ─── Panel ─────────────────── */
+  .panel {
+    background: var(--glass); backdrop-filter: blur(var(--blur));
+    border: 1px solid var(--glass-border); border-radius: var(--radius-lg);
+    overflow: hidden; margin-bottom: 16px;
+    animation: slideUp 0.4s ease-out both;
+  }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+
+  .panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px; border-bottom: 1px solid var(--glass-border);
+  }
+  .panel-title { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .panel-body { padding: 20px; }
+
+  /* ─── Upload Tab ────────────── */
+  .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+  .form-label { display: block; font-size: 12px; font-weight: 500; color: var(--text-muted); margin-bottom: 6px; }
+  .form-input {
+    width: 100%; background: var(--bg-base); border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm); padding: 9px 12px;
+    font-size: 13px; color: var(--text-primary); font-family: var(--font-mono);
+    outline: none; transition: border-color var(--transition);
+  }
+  .form-input:focus { border-color: var(--blue); }
+  .form-row { margin-bottom: 14px; }
+
+  .dropzone {
+    border: 2px dashed var(--glass-border); border-radius: var(--radius);
+    padding: 32px; text-align: center; cursor: pointer;
+    transition: all 0.3s ease; position: relative;
+  }
+  .dropzone:hover, .dropzone.dragover {
+    border-color: var(--blue); background: var(--blue-dim);
+    transform: scale(1.01);
+  }
+  .dropzone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .dropzone-text { font-size: 13px; color: var(--text-secondary); margin-top: 8px; }
+  .dropzone-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+  .file-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; background: var(--bg-base); border-radius: var(--radius-sm);
+    margin-top: 6px; font-size: 12px; animation: fadeIn 0.2s ease;
+  }
+  .file-item-name { font-family: var(--font-mono); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-item-size { color: var(--text-muted); white-space: nowrap; }
+  .file-item-remove { background: none; border: none; color: var(--red); cursor: pointer; font-size: 16px; opacity: 0.7; transition: opacity var(--transition); }
+  .file-item-remove:hover { opacity: 1; }
+
+  .progress-track {
+    width: 100%; height: 6px; background: var(--bg-base);
+    border-radius: 3px; margin-top: 14px; overflow: hidden; display: none;
+  }
+  .progress-track.active { display: block; }
+  .progress-fill {
+    height: 100%; border-radius: 3px; width: 0%;
+    background: linear-gradient(90deg, var(--blue), var(--green));
+    transition: width 0.3s ease;
+    position: relative;
+  }
+  .progress-fill::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    animation: shimmer 1.5s infinite;
+  }
+  @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+
+  .upload-status {
+    font-size: 12px; color: var(--text-muted); margin-top: 8px;
+    font-family: var(--font-mono); display: none;
+  }
+  .upload-status.active { display: block; }
+
+  /* ─── Stats ─────────────────── */
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .stat-card {
+    background: var(--bg-base); border-radius: var(--radius-sm); padding: 16px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+  .stat-label { font-size: 10px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+  .stat-value { font-family: var(--font-mono); font-size: 24px; font-weight: 700; }
+  .stat-unit { font-size: 12px; font-weight: 400; color: var(--text-muted); margin-left: 2px; }
+
+  .mem-bar-wrap { margin-top: 16px; }
+  .mem-bar {
+    height: 16px; background: var(--bg-base); border-radius: 8px; overflow: hidden;
+    position: relative;
+  }
+  .mem-bar-fill {
+    height: 100%; border-radius: 8px; transition: width 0.6s ease;
+    background: linear-gradient(90deg, var(--green), var(--yellow), var(--orange));
+    position: relative;
+  }
+  .mem-bar-fill::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    animation: shimmer 2s infinite;
+  }
+
+  /* ─── Test Runner ───────────── */
+  .test-scenarios { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  .scenario-card {
+    background: var(--bg-base); border: 1px solid var(--glass-border);
+    border-radius: var(--radius); padding: 16px;
+    transition: all 0.3s ease; position: relative; overflow: hidden;
+  }
+  .scenario-card:hover { border-color: rgba(148,163,184,0.3); transform: translateY(-1px); }
+  .scenario-card.running { border-color: var(--blue); }
+  .scenario-card.passed { border-color: var(--green); }
+  .scenario-card.failed { border-color: var(--red); }
+
+  .scenario-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: var(--glass-border); transition: background 0.3s ease;
+  }
+  .scenario-card.running::before {
+    background: linear-gradient(90deg, var(--blue), var(--cyan), var(--blue));
+    background-size: 200%;
+    animation: gradientSlide 1.5s linear infinite;
+  }
+  .scenario-card.passed::before { background: var(--green); }
+  .scenario-card.failed::before { background: var(--red); }
+
+  @keyframes gradientSlide { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+  .scenario-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .scenario-desc { font-size: 11px; color: var(--text-muted); margin-bottom: 10px; }
+
+  .scenario-stats {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+    font-size: 11px; font-family: var(--font-mono); color: var(--text-secondary);
+  }
+  .scenario-stat-label { color: var(--text-muted); }
+
+  .scenario-progress {
+    height: 4px; background: var(--bg-elevated); border-radius: 2px;
+    margin-top: 10px; overflow: hidden;
+  }
+  .scenario-progress-fill {
+    height: 100%; border-radius: 2px; width: 0%;
+    transition: width 0.3s ease;
+  }
+  .scenario-card.running .scenario-progress-fill { background: var(--blue); }
+  .scenario-card.passed .scenario-progress-fill { background: var(--green); width: 100% !important; }
+  .scenario-card.failed .scenario-progress-fill { background: var(--red); }
+
+  .scenario-badge {
+    position: absolute; top: 12px; right: 12px;
+    font-size: 10px; font-weight: 700; padding: 3px 8px;
+    border-radius: 10px; text-transform: uppercase;
+  }
+  .scenario-badge.pending { background: var(--bg-elevated); color: var(--text-muted); }
+  .scenario-badge.running { background: var(--blue-dim); color: var(--blue); animation: pulseBadge 1s infinite; }
+  .scenario-badge.passed { background: var(--green-dim); color: var(--green); }
+  .scenario-badge.failed { background: var(--red-dim); color: var(--red); }
+
+  @keyframes pulseBadge { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+  .scenario-run-btn {
+    position: absolute; bottom: 12px; right: 12px;
+    padding: 5px 12px; border: none; border-radius: 6px;
+    font-size: 11px; font-weight: 600; cursor: pointer;
+    background: var(--blue-dim); color: var(--blue);
+    font-family: var(--font-sans);
+    transition: all var(--transition);
+    display: flex; align-items: center; gap: 4px;
+  }
+  .scenario-run-btn:hover:not(:disabled) { background: var(--blue); color: white; transform: translateY(-1px); }
+  .scenario-run-btn:active:not(:disabled) { transform: scale(0.95); }
+  .scenario-run-btn:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+  .scenario-card.running .scenario-run-btn,
+  .scenario-card.passed .scenario-run-btn,
+  .scenario-card.failed .scenario-run-btn { display: none; }
+
+  /* ─── Results Bar Chart ─────── */
+  .chart-wrap { margin-top: 20px; }
+  .chart-bar-row {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 8px;
+    animation: fadeIn 0.3s ease both;
+  }
+  .chart-label { width: 200px; font-size: 12px; color: var(--text-secondary); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chart-bar-wrap { flex: 1; height: 28px; background: var(--bg-base); border-radius: 6px; overflow: hidden; position: relative; }
+  .chart-bar {
+    height: 100%; border-radius: 6px; width: 0%;
+    transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex; align-items: center; justify-content: flex-end; padding-right: 8px;
+    font-size: 10px; font-weight: 600; font-family: var(--font-mono);
+    color: rgba(255,255,255,0.9); min-width: 40px;
+    position: relative;
+  }
+  .chart-bar::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent 60%, rgba(255,255,255,0.1));
+  }
+  .chart-bar.speed { background: linear-gradient(90deg, var(--blue), var(--cyan)); }
+  .chart-bar.time { background: linear-gradient(90deg, var(--purple), var(--orange)); }
+  .chart-bar.mem { background: linear-gradient(90deg, var(--green), var(--yellow)); }
+  .chart-value { width: 80px; font-size: 11px; font-family: var(--font-mono); color: var(--text-muted); }
+
+  /* ─── Overall Summary ───────── */
+  .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .summary-card {
+    text-align: center; padding: 20px; background: var(--bg-base);
+    border-radius: var(--radius); transition: all 0.3s ease;
+  }
+  .summary-card:hover { transform: translateY(-3px); box-shadow: 0 8px 30px rgba(0,0,0,0.3); }
+  .summary-number { font-size: 36px; font-weight: 700; font-family: var(--font-mono); }
+  .summary-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+
+  /* ─── Log ────────────────────── */
+  .log-body { font-family: var(--font-mono); font-size: 12px; max-height: 600px; overflow-y: auto; }
+  .log-item { border-bottom: 1px solid rgba(148,163,184,0.08); animation: fadeIn 0.2s ease; }
+  .log-item:hover { background: rgba(255,255,255,0.015); }
+  .log-entry {
+    padding: 10px 14px;
+    display: grid; grid-template-columns: 72px 50px 1fr auto; gap: 10px; align-items: start;
+    transition: background var(--transition);
+  }
+  .log-time { color: var(--text-muted); font-size: 11px; padding-top: 1px; }
+  .log-status { font-weight: 700; font-size: 11px; padding: 2px 8px; border-radius: 4px; text-align: center; }
+  .log-status.s2xx { background: var(--green-dim); color: var(--green); }
+  .log-status.s4xx { background: var(--yellow-dim); color: var(--yellow); }
+  .log-status.s5xx { background: var(--red-dim); color: var(--red); }
+  .log-status.serr { background: var(--red-dim); color: var(--red); }
+  .log-msg { color: var(--text-secondary); }
+  .log-msg strong { color: var(--text-primary); font-weight: 600; }
+  .log-dur { color: var(--text-muted); font-size: 11px; white-space: nowrap; padding-top: 1px; }
+
+  .log-detail {
+    padding: 0 14px 10px 14px; margin-left: 82px;
+    font-size: 11px; line-height: 1.7;
+  }
+  .log-detail-section { margin-bottom: 6px; }
+  .log-detail-label { color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+  .log-file-row {
+    display: flex; align-items: center; gap: 8px; padding: 3px 8px;
+    background: var(--bg-base); border-radius: 4px; margin-bottom: 2px;
+  }
+  .log-file-icon { color: var(--blue); font-size: 10px; }
+  .log-file-name { color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log-file-size { color: var(--text-muted); white-space: nowrap; }
+  .log-file-badge {
+    font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px;
+    text-transform: uppercase;
+  }
+  .log-file-badge.ok { background: var(--green-dim); color: var(--green); }
+  .log-file-badge.fail { background: var(--red-dim); color: var(--red); }
+  .log-file-badge.single { background: var(--blue-dim); color: var(--blue); }
+  .log-file-badge.chunk { background: var(--purple-dim); color: var(--purple); }
+
+  .log-stats-row {
+    display: flex; flex-wrap: wrap; gap: 12px; font-size: 11px;
+    padding: 6px 10px; background: var(--bg-base); border-radius: 4px;
+  }
+  .log-stat-item { display: flex; gap: 4px; }
+  .log-stat-key { color: var(--text-muted); }
+  .log-stat-val { font-weight: 600; }
+
+  .log-json-btn { background: none; border: none; color: var(--blue); cursor: pointer; font-size: 10px; font-family: var(--font-mono); opacity: 0.7; padding: 2px 0; }
+  .log-json-btn:hover { opacity: 1; text-decoration: underline; }
+  .log-json { display: none; background: var(--bg-deep); border-radius: var(--radius-sm); padding: 10px; margin-top: 6px; font-size: 11px; color: var(--text-secondary); white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; }
+  .log-json.open { display: block; }
+
+  /* ─── Responsive ────────────── */
+  @media (max-width: 900px) {
+    .upload-grid, .test-scenarios { grid-template-columns: 1fr; }
+    .stat-grid, .summary-grid { grid-template-columns: 1fr 1fr; }
+  }
+
+  /* ─── Confetti ──────────────── */
+  .confetti-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 999; overflow: hidden; }
+  .confetti {
+    position: absolute; top: -10px;
+    width: 8px; height: 8px; border-radius: 2px;
+    animation: confettiFall 3s ease-in forwards;
+  }
+  @keyframes confettiFall {
+    0% { transform: translateY(0) rotate(0deg) scale(1); opacity: 1; }
+    100% { transform: translateY(100vh) rotate(720deg) scale(0); opacity: 0; }
+  }
+
+  /* ─── Spinner ───────────────── */
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--glass-border); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ─── Monitor ─────────────── */
+  .monitor-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .monitor-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+
+  .gauge-container { display: flex; flex-direction: column; align-items: center; padding: 20px; }
+  .gauge-svg { width: 180px; height: 110px; }
+  .gauge-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 8px; }
+  .gauge-value { font-family: var(--font-mono); font-size: 28px; font-weight: 700; margin-top: 4px; }
+  .gauge-sub { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); margin-top: 2px; }
+
+  .gauge-arc-bg { fill: none; stroke: var(--bg-elevated); stroke-width: 10; stroke-linecap: round; }
+  .gauge-arc { fill: none; stroke-width: 10; stroke-linecap: round; transition: stroke-dashoffset 0.8s cubic-bezier(0.4,0,0.2,1), stroke 0.5s ease; }
+
+  .mini-chart { position: relative; height: 80px; background: var(--bg-base); border-radius: var(--radius-sm); overflow: hidden; }
+  .mini-chart canvas { width: 100% !important; height: 100% !important; }
+
+  .monitor-stat-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 16px; border-bottom: 1px solid rgba(148,163,184,0.06);
+    font-size: 13px;
+  }
+  .monitor-stat-row:last-child { border-bottom: none; }
+  .monitor-stat-key { color: var(--text-muted); font-size: 12px; }
+  .monitor-stat-val { font-family: var(--font-mono); font-weight: 600; }
+
+  .monitor-live-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green); margin-right: 6px;
+    animation: pulse 1.5s infinite;
+  }
+
+  .os-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+
+  @media (max-width: 900px) {
+    .monitor-grid, .monitor-grid-3 { grid-template-columns: 1fr; }
+    .os-info-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="bg-glow bg-glow-1"></div>
+<div class="bg-glow bg-glow-2"></div>
+
+<div class="container">
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="topbar-brand">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      WebDAV Test
+    </div>
+    <input type="text" class="server-input" id="serverUrl" value="http://localhost:8000" spellcheck="false">
+    <div id="statusPill" class="status-pill err"><span class="status-dot"></span><span id="statusText">Disconnected</span></div>
+    <button class="btn btn-blue" onclick="checkConnection()">Check</button>
+  </header>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" data-tab="test-runner">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      Test Runner
+    </button>
+    <button class="tab" data-tab="upload">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Upload
+    </button>
+    <button class="tab" data-tab="monitor">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      System Monitor
+    </button>
+    <button class="tab" data-tab="cli-results">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+      CLI Results
+    </button>
+    <button class="tab" data-tab="log">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      API Log
+    </button>
+  </div>
+
+  <!-- ═══ TEST RUNNER TAB ═══ -->
+  <div class="tab-content active" id="tab-test-runner">
+
+    <div class="panel" style="animation-delay:0.1s">
+      <div class="panel-header">
+        <span class="panel-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="2" stroke-linecap="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Automated Test Runner
+        </span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-green" id="btnRunAll" onclick="runAllTests()">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Run All Tests
+          </button>
+          <button class="btn btn-ghost" onclick="resetTests()">Reset</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="test-scenarios" id="scenarioGrid"></div>
+      </div>
+    </div>
+
+    <!-- Summary (after test) -->
+    <div id="summarySection" style="display:none;">
+      <div class="summary-grid" id="summaryGrid"></div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+            Speed Comparison (MB/s)
+          </span>
+        </div>
+        <div class="panel-body chart-wrap" id="speedChart"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Duration (seconds)
+          </span>
+        </div>
+        <div class="panel-body chart-wrap" id="timeChart"></div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="panel" style="animation-delay:0.2s">
+      <div class="panel-header">
+        <span class="panel-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linecap="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+          Server Stats
+        </span>
+        <button class="btn btn-ghost" onclick="refreshStats()">Refresh</button>
+      </div>
+      <div class="panel-body">
+        <div class="stat-grid">
+          <div class="stat-card"><div class="stat-label">Heap Used</div><div class="stat-value" style="color:var(--green)" id="sHeap">--<span class="stat-unit">MB</span></div></div>
+          <div class="stat-card"><div class="stat-label">Heap Total</div><div class="stat-value" style="color:var(--blue)" id="sHeapTotal">--<span class="stat-unit">MB</span></div></div>
+          <div class="stat-card"><div class="stat-label">RSS</div><div class="stat-value" style="color:var(--yellow)" id="sRss">--<span class="stat-unit">MB</span></div></div>
+          <div class="stat-card"><div class="stat-label">Uptime</div><div class="stat-value" style="color:var(--purple)" id="sUptime">--<span class="stat-unit">s</span></div></div>
+        </div>
+        <div class="mem-bar-wrap">
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin:10px 0 4px;">
+            <span id="memLabel">0%</span><span>heap used / total</span>
+          </div>
+          <div class="mem-bar"><div class="mem-bar-fill" id="memFill" style="width:0%"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ UPLOAD TAB ═══ -->
+  <div class="tab-content" id="tab-upload">
+    <div class="upload-grid">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            File Upload
+          </span>
+          <button class="btn btn-ghost" onclick="clearFiles()">Clear</button>
+        </div>
+        <div class="panel-body">
+          <div class="form-row">
+            <label class="form-label">Upload Path</label>
+            <input type="text" class="form-input" id="uploadPath" placeholder="e.g. test/2026-01-28/image" value="_test_dashboard">
+          </div>
+          <div class="form-row">
+            <label class="form-label">Filename (optional)</label>
+            <input type="text" class="form-input" id="uploadFilename" placeholder="Leave empty for original name">
+          </div>
+          <div class="form-row">
+            <div class="dropzone" id="dropzone">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <div class="dropzone-text">Drop files here or click to browse</div>
+              <div class="dropzone-hint">Max 3GB per file, 10 files</div>
+              <input type="file" id="fileInput" multiple>
+            </div>
+            <div id="fileList"></div>
+          </div>
+          <div class="progress-track" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
+          <div class="upload-status" id="uploadStatus"></div>
+          <div style="display:flex;gap:8px;margin-top:12px;">
+            <button class="btn btn-green" id="btnUpload" onclick="uploadFiles()">Upload</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            Last Upload Result
+          </span>
+        </div>
+        <div class="panel-body">
+          <div id="lastResult" style="font-family:var(--font-mono);font-size:12px;color:var(--text-muted);line-height:1.8;">
+            No upload data yet
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ SYSTEM MONITOR TAB ═══ -->
+  <div class="tab-content" id="tab-monitor">
+
+    <!-- Live Indicator + Controls -->
+    <div class="panel" style="animation-delay:0.1s">
+      <div class="panel-header">
+        <span class="panel-title">
+          <span class="monitor-live-dot" id="monitorDot"></span>
+          Real-time System Monitor
+        </span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono)" id="monitorInterval">2s</span>
+          <button class="btn btn-green" id="btnMonitorToggle" onclick="toggleMonitor()">Start</button>
+          <button class="btn btn-ghost" onclick="clearHistory()">Clear History</button>
+        </div>
+      </div>
+      <div class="panel-body">
+
+        <!-- Gauges -->
+        <div class="monitor-grid" style="margin-bottom:20px;">
+
+          <!-- CPU Gauge -->
+          <div class="gauge-container">
+            <svg class="gauge-svg" viewBox="0 0 200 120">
+              <path d="M 20 100 A 80 80 0 0 1 180 100" class="gauge-arc-bg"/>
+              <path d="M 20 100 A 80 80 0 0 1 180 100" class="gauge-arc" id="gaugeCpuArc"
+                stroke="var(--cyan)" stroke-dasharray="251.3" stroke-dashoffset="251.3"/>
+            </svg>
+            <div class="gauge-label">Process CPU</div>
+            <div class="gauge-value" style="color:var(--cyan)" id="gaugeCpuVal">0<span class="stat-unit">%</span></div>
+            <div class="gauge-sub" id="gaugeCpuSub">0 cores</div>
+          </div>
+
+          <!-- Process Memory Gauge -->
+          <div class="gauge-container">
+            <svg class="gauge-svg" viewBox="0 0 200 120">
+              <path d="M 20 100 A 80 80 0 0 1 180 100" class="gauge-arc-bg"/>
+              <path d="M 20 100 A 80 80 0 0 1 180 100" class="gauge-arc" id="gaugeMemArc"
+                stroke="var(--green)" stroke-dasharray="251.3" stroke-dashoffset="251.3"/>
+            </svg>
+            <div class="gauge-label">Process RSS</div>
+            <div class="gauge-value" style="color:var(--green)" id="gaugeMemVal">0<span class="stat-unit">MB</span></div>
+            <div class="gauge-sub" id="gaugeMemSub">heap: 0 / 0 MB</div>
+          </div>
+
+        </div>
+
+        <!-- OS Memory Gauge (Full Width) -->
+        <div style="margin-bottom:20px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span style="font-size:12px;font-weight:600;color:var(--text-secondary);">System Memory</span>
+            <span style="font-size:11px;font-family:var(--font-mono);color:var(--text-muted)" id="osMemText">-- / -- MB</span>
+          </div>
+          <div style="height:24px;background:var(--bg-base);border-radius:12px;overflow:hidden;position:relative;">
+            <div id="osMemBar" style="height:100%;border-radius:12px;width:0%;background:linear-gradient(90deg,var(--green),var(--yellow),var(--orange));transition:width 0.8s ease;position:relative;">
+              <div style="position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.15),transparent);animation:shimmer 2s infinite;"></div>
+            </div>
+            <!-- Server process portion -->
+            <div id="osMemServerMark" style="position:absolute;top:0;height:100%;border-right:2px solid var(--cyan);transition:left 0.8s ease;left:0;">
+              <span style="position:absolute;top:-18px;right:-20px;font-size:9px;font-family:var(--font-mono);color:var(--cyan);white-space:nowrap" id="osMemServerLabel">Server</span>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:10px;color:var(--text-muted);">
+            <span>0%</span>
+            <span id="osMemPctText">0% used</span>
+            <span>100%</span>
+          </div>
+        </div>
+
+        <!-- History Charts -->
+        <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:10px;">History (last 60 samples)</div>
+        <div class="monitor-grid" style="margin-bottom:16px;">
+          <div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">CPU %</div>
+            <div class="mini-chart"><canvas id="chartCpu"></canvas></div>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">RSS Memory (MB)</div>
+            <div class="mini-chart"><canvas id="chartMem"></canvas></div>
+          </div>
+        </div>
+
+        <div class="monitor-grid" style="margin-bottom:16px;">
+          <div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Heap Used (MB)</div>
+            <div class="mini-chart"><canvas id="chartHeap"></canvas></div>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Load Average (1m)</div>
+            <div class="mini-chart"><canvas id="chartLoad"></canvas></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail Stats -->
+    <div class="monitor-grid">
+      <div class="panel" style="animation-delay:0.2s">
+        <div class="panel-header">
+          <span class="panel-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="2" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+            Process Details
+          </span>
+        </div>
+        <div class="panel-body" style="padding:0;">
+          <div id="processDetails">
+            <div class="monitor-stat-row"><span class="monitor-stat-key">Heap Used</span><span class="monitor-stat-val" id="pdHeapUsed">--</span></div>
+            <div class="monitor-stat-row"><span class="monitor-stat-key">Heap Total</span><span class="monitor-stat-val" id="pdHeapTotal">--</span></div>
+            <div class="monitor-stat-row"><span class="monitor-stat-key">RSS</span><span class="monitor-stat-val" id="pdRss">--</span></div>
+            <div class="monitor-stat-row"><span class="monitor-stat-key">External</span><span class="monitor-stat-val" id="pdExternal">--</span></div>
+            <div class="monitor-stat-row"><span class="monitor-stat-key">Array Buffers</span><span class="monitor-stat-val" id="pdArrayBuf">--</span></div>
+            <div class="monitor-stat-row"><span class="monitor-stat-key">CPU User</span><span class="monitor-stat-val" id="pdCpuUser">--</span></div>
+            <div class="monitor-stat-row"><span class="monitor-stat-key">CPU System</span><span class="monitor-stat-val" id="pdCpuSys">--</span></div>
+            <div class="monitor-stat-row"><span class="monitor-stat-key">Uptime</span><span class="monitor-stat-val" id="pdUptime">--</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="animation-delay:0.3s">
+        <div class="panel-header">
+          <span class="panel-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            OS Info
+          </span>
+        </div>
+        <div class="panel-body" style="padding:0;">
+          <div id="osDetails">
+            <div class="monitor-stat-row"><span class="monitor-stat-key">Hostname</span><span class="monitor-stat-val" id="pdHostname">--</span></div>
+            <div class="monitor-stat-row"><span class="monitor-stat-key">Platform</span><span class="monitor-stat-val" id="pdPlatform">--</span></div>
+            <div class="monitor-stat-row"><span class="monitor-stat-key">CPU Cores</span><span class="monitor-stat-val" id="pdCores">--</span></div>
+            <div class="monitor-stat-row"><span class="monitor-stat-key">Total Memory</span><span class="monitor-stat-val" id="pdTotalMem">--</span></div>
+            <div class="monitor-stat-row"><span class="monitor-stat-key">Free Memory</span><span class="monitor-stat-val" id="pdFreeMem">--</span></div>
+            <div class="monitor-stat-row"><span class="monitor-stat-key">Used Memory</span><span class="monitor-stat-val" id="pdUsedMem">--</span></div>
+            <div class="monitor-stat-row"><span class="monitor-stat-key">Load Avg (1m)</span><span class="monitor-stat-val" id="pdLoad1">--</span></div>
+            <div class="monitor-stat-row"><span class="monitor-stat-key">Load Avg (5m/15m)</span><span class="monitor-stat-val" id="pdLoad515">--</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ CLI RESULTS TAB ═══ -->
+  <div class="tab-content" id="tab-cli-results">
+
+    <!-- Controls -->
+    <div class="panel" style="animation-delay:0.1s">
+      <div class="panel-header">
+        <span class="panel-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--orange)" stroke-width="2" stroke-linecap="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          CLI Test Results
+        </span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;">
+            <input type="checkbox" id="cliAutoRefresh" style="accent-color:var(--green);">
+            Auto (3s)
+          </label>
+          <button class="btn btn-blue" onclick="fetchCliResults()">Refresh</button>
+          <button class="btn btn-ghost" onclick="clearCliResults()">Clear</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <!-- Summary cards -->
+        <div class="stat-grid" id="cliSummaryGrid">
+          <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value" style="color:var(--text-primary)" id="cliTotal">--</div></div>
+          <div class="stat-card"><div class="stat-label">Passed</div><div class="stat-value" style="color:var(--green)" id="cliPassed">--</div></div>
+          <div class="stat-card"><div class="stat-label">Failed</div><div class="stat-value" style="color:var(--red)" id="cliFailed">--</div></div>
+          <div class="stat-card"><div class="stat-label">Total Time</div><div class="stat-value" style="color:var(--blue)" id="cliTotalTime">--<span class="stat-unit">s</span></div></div>
+        </div>
+        <div id="cliEmptyMsg" style="text-align:center;padding:30px;color:var(--text-muted);">
+          No CLI test results yet.<br><span style="font-size:12px;">Run <code style="background:var(--bg-elevated);padding:2px 6px;border-radius:4px;">test/scripts/run_all.sh</code> then click Refresh or enable Auto.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scenario table -->
+    <div class="panel" style="animation-delay:0.2s;display:none;" id="cliTablePanel">
+      <div class="panel-header">
+        <span class="panel-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="2" stroke-linecap="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+          Scenarios
+        </span>
+      </div>
+      <div class="panel-body" style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;" id="cliTable">
+          <thead>
+            <tr style="border-bottom:1px solid var(--glass-border);text-align:left;">
+              <th style="padding:8px 12px;color:var(--text-secondary);font-weight:500;">Scenario</th>
+              <th style="padding:8px 12px;color:var(--text-secondary);font-weight:500;">Status</th>
+              <th style="padding:8px 12px;color:var(--text-secondary);font-weight:500;text-align:right;">Duration</th>
+              <th style="padding:8px 12px;color:var(--text-secondary);font-weight:500;">Heap</th>
+              <th style="padding:8px 12px;color:var(--text-secondary);font-weight:500;">RSS</th>
+              <th style="padding:8px 12px;color:var(--text-secondary);font-weight:500;">FD</th>
+            </tr>
+          </thead>
+          <tbody id="cliTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Resource delta chart -->
+    <div class="panel" style="animation-delay:0.3s;display:none;" id="cliChartPanel">
+      <div class="panel-header">
+        <span class="panel-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2" stroke-linecap="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+          Duration (seconds)
+        </span>
+      </div>
+      <div class="panel-body chart-wrap" id="cliDurationChart"></div>
+    </div>
+
+  </div>
+
+  <!-- ═══ LOG TAB ═══ -->
+  <div class="tab-content" id="tab-log">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--cyan)" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          API Log
+        </span>
+        <button class="btn btn-ghost" onclick="clearLog()">Clear</button>
+      </div>
+      <div class="panel-body log-body" id="logBody">
+        <div style="text-align:center;padding:40px;color:var(--text-muted);">No API calls yet</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ─── State ────────────────────────────────
+let selectedFiles = [];
+let logCount = 0;
+let testResults = [];
+
+const $ = id => document.getElementById(id);
+const api = () => $('serverUrl').value.replace(/\/$/, '') + '/webdav';
+const now = () => new Date().toLocaleTimeString('ko-KR', { hour12: false });
+const fmtSize = b => b >= 1048576 ? (b/1048576).toFixed(1)+'MB' : b >= 1024 ? (b/1024).toFixed(0)+'KB' : b+'B';
+
+// ─── Tabs ─────────────────────────────────
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+  });
+});
+
+// ─── Connection ───────────────────────────
+async function checkConnection() {
+  const pill = $('statusPill');
+  pill.className = 'status-pill checking';
+  $('statusText').textContent = 'Checking...';
+  const { status, data } = await apiCall('GET', '/info');
+  if (status === 200) {
+    pill.className = 'status-pill ok';
+    $('statusText').textContent = 'Connected';
+    refreshStats();
+  } else {
+    pill.className = 'status-pill err';
+    $('statusText').textContent = 'Disconnected';
+  }
+}
+
+// ─── API Call Wrapper ─────────────────────
+// reqMeta: { files: [{name, size}], path: '...' } — 로그에 요청 상세 표시용
+async function apiCall(method, endpoint, opts = {}, reqMeta = null) {
+  const url = api() + endpoint;
+  const start = performance.now();
+  try {
+    const res = await fetch(url, { method, ...opts });
+    const dur = Math.round(performance.now() - start);
+    let data;
+    const ct = res.headers.get('content-type') || '';
+    if (ct.includes('json')) data = await res.json();
+    else { await res.blob(); data = { _binary: true }; }
+    addLog(res.status, method, endpoint, data?.message || res.statusText, data, dur, reqMeta);
+    return { status: res.status, data, headers: res.headers };
+  } catch (err) {
+    const dur = Math.round(performance.now() - start);
+    addLog(0, method, endpoint, err.message, null, dur, reqMeta);
+    return { status: 0, data: null };
+  }
+}
+
+// ─── Log ──────────────────────────────────
+function buildUploadDetail(data) {
+  if (!data) return '';
+  let html = '';
+
+  // 단일 업로드 응답
+  if (data.filename && data.uploadType && !data.results) {
+    const s = data.stats || {};
+    const typeBadge = data.uploadType === 'multipart'
+      ? `<span class="log-file-badge chunk">chunk ${data.chunks||''}p</span>`
+      : `<span class="log-file-badge single">single</span>`;
+
+    html += `<div class="log-detail-section">
+      <div class="log-detail-label">Uploaded File</div>
+      <div class="log-file-row">
+        <span class="log-file-icon">&#9654;</span>
+        <span class="log-file-name">${data.filename}</span>
+        <span class="log-file-size">${fmtSize(data.size||0)}</span>
+        ${typeBadge}
+        <span class="log-file-badge ok">OK</span>
+      </div>
+    </div>`;
+
+    if (Object.keys(s).length > 0) {
+      html += `<div class="log-detail-section"><div class="log-stats-row">
+        ${s.uploadSpeedMBps ? `<div class="log-stat-item"><span class="log-stat-key">Speed:</span><span class="log-stat-val" style="color:var(--cyan)">${s.uploadSpeedMBps} MB/s</span></div>` : ''}
+        ${s.uploadSeconds != null ? `<div class="log-stat-item"><span class="log-stat-key">Upload:</span><span class="log-stat-val" style="color:var(--green)">${s.uploadSeconds}s</span></div>` : ''}
+        ${s.hashSeconds != null ? `<div class="log-stat-item"><span class="log-stat-key">Hash:</span><span class="log-stat-val" style="color:var(--purple)">${s.hashSeconds}s</span></div>` : ''}
+        ${s.totalWallClockSeconds != null ? `<div class="log-stat-item"><span class="log-stat-key">Total:</span><span class="log-stat-val" style="color:var(--text-primary)">${s.totalWallClockSeconds}s</span></div>` : ''}
+        ${s.memoryIncreaseMB != null ? `<div class="log-stat-item"><span class="log-stat-key">Mem:</span><span class="log-stat-val">${s.memoryIncreaseMB>0?'+':''}${s.memoryIncreaseMB}MB</span></div>` : ''}
+        ${s.memoryRssMB != null ? `<div class="log-stat-item"><span class="log-stat-key">RSS:</span><span class="log-stat-val">${s.memoryRssMB}MB</span></div>` : ''}
+      </div></div>`;
+    }
+  }
+
+  // 다중 업로드 응답
+  if (data.results && Array.isArray(data.results)) {
+    const s = data.stats || {};
+    const summary = data.summary || {};
+    html += `<div class="log-detail-section"><div class="log-detail-label">Uploaded Files (${summary.success||0}/${summary.total||0} success)</div>`;
+    for (const r of data.results) {
+      const okBadge = r.success ? '<span class="log-file-badge ok">OK</span>' : '<span class="log-file-badge fail">FAIL</span>';
+      const typeBadge = r.uploadType === 'multipart'
+        ? `<span class="log-file-badge chunk">chunk</span>`
+        : r.uploadType ? `<span class="log-file-badge single">single</span>` : '';
+      const durText = r.durationSeconds ? `${r.durationSeconds}s` : '';
+      html += `<div class="log-file-row">
+        <span class="log-file-icon">&#9654;</span>
+        <span class="log-file-name">${r.filename || r.originalFilename || '?'}</span>
+        <span class="log-file-size">${r.size ? fmtSize(r.size) : ''} ${durText}</span>
+        ${typeBadge} ${okBadge}
+      </div>`;
+    }
+    html += '</div>';
+
+    if (Object.keys(s).length > 0) {
+      html += `<div class="log-detail-section"><div class="log-stats-row">
+        ${s.totalSizeMB ? `<div class="log-stat-item"><span class="log-stat-key">Size:</span><span class="log-stat-val">${s.totalSizeMB}MB</span></div>` : ''}
+        ${s.totalWallClockSeconds != null ? `<div class="log-stat-item"><span class="log-stat-key">Total:</span><span class="log-stat-val" style="color:var(--green)">${s.totalWallClockSeconds}s</span></div>` : ''}
+        ${s.multerReceiveSeconds != null ? `<div class="log-stat-item"><span class="log-stat-key">Multer:</span><span class="log-stat-val">${s.multerReceiveSeconds}s</span></div>` : ''}
+        ${s.memoryIncreaseMB != null ? `<div class="log-stat-item"><span class="log-stat-key">Mem:</span><span class="log-stat-val">${s.memoryIncreaseMB>0?'+':''}${s.memoryIncreaseMB}MB</span></div>` : ''}
+        ${s.memoryRssMB != null ? `<div class="log-stat-item"><span class="log-stat-key">RSS:</span><span class="log-stat-val">${s.memoryRssMB}MB</span></div>` : ''}
+      </div></div>`;
+    }
+  }
+
+  // 디렉토리 관련 응답
+  if (data.path && !data.filename && !data.results && !data.memory) {
+    html += `<div class="log-detail-section"><div class="log-stats-row">
+      <div class="log-stat-item"><span class="log-stat-key">Path:</span><span class="log-stat-val">${data.path}</span></div>
+    </div></div>`;
+  }
+
+  return html;
+}
+
+function addLog(status, method, endpoint, msg, data, dur, reqMeta) {
+  const body = $('logBody');
+  if (logCount === 0) body.innerHTML = '';
+  logCount++;
+  const id = 'lj' + logCount;
+  const sc = status >= 500 ? 's5xx' : status >= 400 ? 's4xx' : status >= 200 ? 's2xx' : 'serr';
+  const el = document.createElement('div');
+  el.className = 'log-item';
+
+  // 요청 메타 정보 (어떤 파일을 보냈는지)
+  let reqDetail = '';
+  if (reqMeta && reqMeta.files && reqMeta.files.length > 0) {
+    reqDetail = `<div class="log-detail-section"><div class="log-detail-label">Request Files</div>`;
+    for (const f of reqMeta.files) {
+      reqDetail += `<div class="log-file-row">
+        <span class="log-file-icon" style="color:var(--orange)">&#9650;</span>
+        <span class="log-file-name">${f.name}</span>
+        <span class="log-file-size">${fmtSize(f.size)}</span>
+      </div>`;
+    }
+    if (reqMeta.path) {
+      reqDetail += `<div style="margin-top:4px;font-size:10px;color:var(--text-muted);">path: <span style="color:var(--text-secondary)">${reqMeta.path}</span></div>`;
+    }
+    reqDetail += '</div>';
+  }
+
+  const resDetail = buildUploadDetail(data);
+  const hasDetail = reqDetail || resDetail;
+
+  el.innerHTML = `<div class="log-entry">
+    <span class="log-time">${now()}</span>
+    <span class="log-status ${sc}">${status||'ERR'}</span>
+    <div class="log-msg"><strong>${method}</strong> ${endpoint} <span style="color:var(--text-muted)">— ${msg||''}</span></div>
+    <span class="log-dur">${dur}ms</span>
+  </div>
+  ${hasDetail ? `<div class="log-detail">${reqDetail}${resDetail}
+    ${data ? `<button class="log-json-btn" onclick="document.getElementById('${id}').classList.toggle('open')">Raw JSON</button><div class="log-json" id="${id}">${JSON.stringify(data,null,2)}</div>` : ''}
+  </div>` : (data ? `<div class="log-detail"><button class="log-json-btn" onclick="document.getElementById('${id}').classList.toggle('open')">Raw JSON</button><div class="log-json" id="${id}">${JSON.stringify(data,null,2)}</div></div>` : '')}`;
+  body.prepend(el);
+}
+function clearLog() { $('logBody').innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">Log cleared</div>'; logCount = 0; }
+
+// ─── Stats ────────────────────────────────
+async function refreshStats() {
+  const { status, data } = await apiCall('GET', '/stats');
+  if (status !== 200 || !data?.memory) return;
+  $('sHeap').innerHTML = `${data.memory.heapUsedMB}<span class="stat-unit">MB</span>`;
+  $('sHeapTotal').innerHTML = `${data.memory.heapTotalMB}<span class="stat-unit">MB</span>`;
+  $('sRss').innerHTML = `${data.memory.rssMB}<span class="stat-unit">MB</span>`;
+  const m = Math.floor(data.uptime / 60), s = Math.floor(data.uptime % 60);
+  $('sUptime').innerHTML = `${m}:${String(s).padStart(2,'0')}<span class="stat-unit">min</span>`;
+  const pct = Math.min(100, parseFloat(data.memory.heapUsedMB) / parseFloat(data.memory.heapTotalMB) * 100);
+  $('memFill').style.width = pct + '%';
+  $('memLabel').textContent = pct.toFixed(1) + '%';
+}
+
+// ─── File Upload ──────────────────────────
+const dz = $('dropzone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('dragover'); addToList(e.dataTransfer.files); });
+$('fileInput').addEventListener('change', e => { addToList(e.target.files); e.target.value=''; });
+
+function addToList(fl) { for (const f of fl) { if (selectedFiles.length < 10) selectedFiles.push(f); } renderFiles(); }
+function removeFile(i) { selectedFiles.splice(i,1); renderFiles(); }
+function clearFiles() { selectedFiles=[]; renderFiles(); $('progressBar').classList.remove('active'); $('uploadStatus').classList.remove('active'); }
+function renderFiles() {
+  $('fileList').innerHTML = selectedFiles.map((f,i) => `<div class="file-item"><span class="file-item-name">${f.name}</span><span class="file-item-size">${fmtSize(f.size)}</span><button class="file-item-remove" onclick="removeFile(${i})">&times;</button></div>`).join('');
+}
+
+async function uploadFiles() {
+  if (!selectedFiles.length) return;
+  const p = $('uploadPath').value.trim();
+  if (!p) return;
+  $('btnUpload').disabled = true;
+  $('progressBar').classList.add('active');
+  $('uploadStatus').classList.add('active');
+  $('progressFill').style.width = '30%';
+  $('uploadStatus').textContent = `Uploading ${selectedFiles.length} file(s)...`;
+
+  try {
+    const fd = new FormData();
+    if (selectedFiles.length === 1) {
+      fd.append('file', selectedFiles[0]);
+      fd.append('path', p);
+      const fn = $('uploadFilename').value.trim();
+      if (fn) fd.append('filename', fn);
+      $('progressFill').style.width = '60%';
+      const meta = { files: [{ name: fn || selectedFiles[0].name, size: selectedFiles[0].size }], path: p };
+      const { data } = await apiCall('POST', '/upload', { body: fd }, meta);
+      $('progressFill').style.width = '100%';
+      if (data?.stats) showResult(data);
+      $('uploadStatus').textContent = data?.filename ? `Done: ${data.filename}` : `Error: ${data?.message}`;
+    } else {
+      fd.append('path', p);
+      fd.append('filenames', JSON.stringify(selectedFiles.map(f => f.name)));
+      for (const f of selectedFiles) fd.append('files', f);
+      $('progressFill').style.width = '60%';
+      const meta = { files: selectedFiles.map(f => ({ name: f.name, size: f.size })), path: p };
+      const { data } = await apiCall('POST', '/upload-multiple', { body: fd }, meta);
+      $('progressFill').style.width = '100%';
+      if (data?.stats) showMultiResult(data);
+      $('uploadStatus').textContent = data?.summary ? `Done: ${data.summary.success}/${data.summary.total}` : `Error: ${data?.message}`;
+    }
+    refreshStats();
+  } finally { $('btnUpload').disabled = false; }
+}
+
+function showResult(d) {
+  const s = d.stats;
+  $('lastResult').innerHTML = `<div style="color:var(--text-primary);font-weight:600;margin-bottom:6px;">${d.filename}</div>
+    <div>Type: <span style="color:var(--blue)">${d.uploadType}${d.chunks?' ('+d.chunks+' chunks)':''}</span></div>
+    <div>Size: <span style="color:var(--text-primary)">${fmtSize(d.size)}</span></div>
+    <div>Upload: <span style="color:var(--green)">${s.uploadSeconds}s</span> | Hash: <span style="color:var(--purple)">${s.hashSeconds}s</span> | Speed: <span style="color:var(--cyan)">${s.uploadSpeedMBps} MB/s</span></div>
+    <div>Total: <span style="color:var(--text-primary);font-weight:600;">${s.totalWallClockSeconds}s</span> | Memory: +${s.memoryIncreaseMB}MB</div>
+    <div>ETag: <span style="color:var(--text-muted)">${d.etag}</span></div>`;
+}
+function showMultiResult(d) {
+  const s = d.stats;
+  $('lastResult').innerHTML = `<div style="color:var(--text-primary);font-weight:600;margin-bottom:6px;">${d.summary.success}/${d.summary.total} uploaded</div>
+    <div>Total: <span style="color:var(--text-primary)">${s.totalSizeMB}MB</span> in <span style="color:var(--green)">${s.totalWallClockSeconds}s</span></div>
+    <div>Memory: +${s.memoryIncreaseMB}MB | RSS ${s.memoryRssMB}MB</div>
+    ${(d.results||[]).map(r=>`<div>${r.success?'<span style="color:var(--green)">OK</span>':'<span style="color:var(--red)">FAIL</span>'} ${r.filename} ${r.durationSeconds?'('+r.durationSeconds+'s)':''}</div>`).join('')}`;
+}
+
+// ─── Test Runner ──────────────────────────
+const scenarios = [
+  { id: 's1', name: 'Small 1x1MB', desc: '1 file, 1MB, single upload', files: [{n:'s1_1mb.bin',s:1*1048576}] },
+  { id: 's2', name: 'Small 3x1MB', desc: '3 files, each 1MB', files: [{n:'s2_a.bin',s:1048576},{n:'s2_b.bin',s:1048576},{n:'s2_c.bin',s:1048576}] },
+  { id: 's3', name: 'Medium 1x50MB', desc: '1 file, 50MB, single upload', files: [{n:'s3_50mb.bin',s:50*1048576}] },
+  { id: 's4', name: 'Medium 5x20MB', desc: '5 files, each 20MB (100MB total)', files: Array.from({length:5},(_,i)=>({n:`s4_20mb_${i+1}.bin`,s:20*1048576})) },
+  { id: 's5', name: 'Mixed 3 (1+30+80MB)', desc: '3 files of different sizes (111MB)', files: [{n:'s5_1mb.bin',s:1048576},{n:'s5_30mb.bin',s:30*1048576},{n:'s5_80mb.bin',s:80*1048576}] },
+  { id: 's6', name: 'Large 1x150MB', desc: '1 file, 150MB, chunk upload', files: [{n:'s6_150mb.bin',s:150*1048576}] },
+  { id: 's7', name: 'Mixed 4 (5+10+120+2MB)', desc: '4 files including 120MB chunk', files: [{n:'s7_5mb.bin',s:5*1048576},{n:'s7_10mb.bin',s:10*1048576},{n:'s7_120mb.bin',s:120*1048576},{n:'s7_2mb.bin',s:2*1048576}] },
+  { id: 's8', name: 'Batch 10x2MB', desc: '10 files, each 2MB (20MB total)', files: Array.from({length:10},(_,i)=>({n:`s8_2mb_${String(i+1).padStart(2,'0')}.bin`,s:2*1048576})) },
+];
+
+function renderScenarios() {
+  $('scenarioGrid').innerHTML = scenarios.map(s => {
+    const total = s.files.reduce((a,f)=>a+f.s,0);
+    return `<div class="scenario-card" id="card-${s.id}" style="padding-bottom:44px;">
+      <span class="scenario-badge pending" id="badge-${s.id}">PENDING</span>
+      <div class="scenario-name">${s.name}</div>
+      <div class="scenario-desc">${s.desc}</div>
+      <div class="scenario-stats">
+        <div><span class="scenario-stat-label">Files:</span> ${s.files.length}</div>
+        <div><span class="scenario-stat-label">Size:</span> ${fmtSize(total)}</div>
+        <div id="stat-time-${s.id}"><span class="scenario-stat-label">Time:</span> --</div>
+        <div id="stat-speed-${s.id}"><span class="scenario-stat-label">Speed:</span> --</div>
+      </div>
+      <div class="scenario-progress"><div class="scenario-progress-fill" id="prog-${s.id}"></div></div>
+      <button class="scenario-run-btn" id="runbtn-${s.id}" onclick="runSingleTest('${s.id}')">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Run
+      </button>
+    </div>`;
+  }).join('');
+}
+
+function setCardState(id, state, extra={}) {
+  const card = $('card-'+id);
+  const badge = $('badge-'+id);
+  card.className = 'scenario-card ' + state;
+  badge.className = 'scenario-badge ' + state;
+  badge.textContent = state.toUpperCase();
+  if (extra.time) $('stat-time-'+id).innerHTML = `<span class="scenario-stat-label">Time:</span> ${extra.time}s`;
+  if (extra.speed) $('stat-speed-'+id).innerHTML = `<span class="scenario-stat-label">Speed:</span> ${extra.speed} MB/s`;
+}
+
+function generateTestBlob(sizeBytes) {
+  const chunks = [];
+  let remaining = sizeBytes;
+  while (remaining > 0) {
+    const sz = Math.min(1048576, remaining);
+    const arr = new Uint8Array(sz);
+    crypto.getRandomValues(arr);
+    chunks.push(arr);
+    remaining -= sz;
+  }
+  return new Blob(chunks);
+}
+
+async function runScenario(s) {
+  const testPath = `_dash_test_${Date.now()}_${s.id}`;
+  const totalSize = s.files.reduce((a,f)=>a+f.s,0);
+  setCardState(s.id, 'running');
+  $('prog-'+s.id).style.width = '10%';
+
+  const start = performance.now();
+  let result = { name: s.name, status: 'fail', time: 0, speed: 0, files: s.files.length, totalSize };
+
+  try {
+    // Generate + upload
+    $('prog-'+s.id).style.width = '20%';
+    const fd = new FormData();
+
+    if (s.files.length === 1) {
+      const blob = generateTestBlob(s.files[0].s);
+      fd.append('file', blob, s.files[0].n);
+      fd.append('path', testPath);
+      $('prog-'+s.id).style.width = '40%';
+      const meta = { files: [{ name: s.files[0].n, size: s.files[0].s }], path: testPath };
+      const { status, data } = await apiCall('POST', '/upload', { body: fd }, meta);
+      $('prog-'+s.id).style.width = '80%';
+      const dur = ((performance.now() - start)/1000).toFixed(2);
+      if (status === 200) {
+        const speed = (totalSize/1048576/parseFloat(dur)).toFixed(2);
+        result = { ...result, status:'pass', time:dur, speed, data };
+      } else {
+        result.time = dur;
+      }
+    } else {
+      fd.append('path', testPath);
+      fd.append('filenames', JSON.stringify(s.files.map(f=>f.n)));
+      for (const f of s.files) {
+        const blob = generateTestBlob(f.s);
+        fd.append('files', blob, f.n);
+      }
+      $('prog-'+s.id).style.width = '40%';
+      const meta = { files: s.files.map(f => ({ name: f.n, size: f.s })), path: testPath };
+      const { status, data } = await apiCall('POST', '/upload-multiple', { body: fd }, meta);
+      $('prog-'+s.id).style.width = '80%';
+      const dur = ((performance.now() - start)/1000).toFixed(2);
+      if (status === 200 || status === 207) {
+        const speed = (totalSize/1048576/parseFloat(dur)).toFixed(2);
+        result = { ...result, status: data?.summary?.failed > 0 ? 'partial':'pass', time:dur, speed, data };
+      } else {
+        result.time = dur;
+      }
+    }
+
+    // Cleanup
+    $('prog-'+s.id).style.width = '90%';
+    await apiCall('DELETE', `/directory/${encodeURIComponent(testPath)}?force=true`, {}, { files: [], path: testPath });
+    $('prog-'+s.id).style.width = '100%';
+
+  } catch (err) {
+    result.time = ((performance.now()-start)/1000).toFixed(2);
+  }
+
+  setCardState(s.id, result.status === 'pass' ? 'passed' : 'failed', { time: result.time, speed: result.speed });
+  return result;
+}
+
+async function runAllTests() {
+  $('btnRunAll').disabled = true;
+  disableAllRunBtns(true);
+  $('summarySection').style.display = 'none';
+  testResults = [];
+  resetTests();
+
+  for (const s of scenarios) {
+    const result = await runScenario(s);
+    testResults.push(result);
+  }
+
+  refreshStats();
+  showSummary();
+  $('btnRunAll').disabled = false;
+  disableAllRunBtns(false);
+
+  // confetti if all passed
+  if (testResults.every(r => r.status === 'pass')) fireConfetti();
+}
+
+async function runSingleTest(scenarioId) {
+  const s = scenarios.find(x => x.id === scenarioId);
+  if (!s) return;
+
+  // 버튼 비활성화
+  const btn = $('runbtn-' + scenarioId);
+  if (btn) btn.disabled = true;
+  $('btnRunAll').disabled = true;
+
+  // 해당 카드만 리셋
+  const card = $('card-' + scenarioId);
+  card.className = 'scenario-card';
+  card.style.paddingBottom = '44px';
+  const badge = $('badge-' + scenarioId);
+  badge.className = 'scenario-badge pending';
+  badge.textContent = 'PENDING';
+  $('stat-time-' + scenarioId).innerHTML = '<span class="scenario-stat-label">Time:</span> --';
+  $('stat-speed-' + scenarioId).innerHTML = '<span class="scenario-stat-label">Speed:</span> --';
+  $('prog-' + scenarioId).style.width = '0%';
+
+  const result = await runScenario(s);
+
+  // testResults에 추가/갱신
+  const existIdx = testResults.findIndex(r => r.name === s.name);
+  if (existIdx >= 0) testResults[existIdx] = result;
+  else testResults.push(result);
+
+  refreshStats();
+
+  // 결과가 있으면 summary 갱신
+  if (testResults.length > 0) showSummary();
+
+  $('btnRunAll').disabled = false;
+}
+
+function disableAllRunBtns(disabled) {
+  scenarios.forEach(s => {
+    const btn = $('runbtn-' + s.id);
+    if (btn) btn.disabled = disabled;
+  });
+}
+
+function resetTests() {
+  renderScenarios();
+  testResults = [];
+  $('summarySection').style.display = 'none';
+}
+
+function showSummary() {
+  const passed = testResults.filter(r=>r.status==='pass').length;
+  const failed = testResults.length - passed;
+  const totalSize = testResults.reduce((a,r)=>a+r.totalSize,0);
+  const totalTime = testResults.reduce((a,r)=>a+parseFloat(r.time||0),0);
+  const avgSpeed = totalTime > 0 ? (totalSize/1048576/totalTime).toFixed(2) : '0';
+
+  $('summaryGrid').innerHTML = `
+    <div class="summary-card"><div class="summary-number" style="color:var(--green)">${passed}</div><div class="summary-label">Passed</div></div>
+    <div class="summary-card"><div class="summary-number" style="color:${failed?'var(--red)':'var(--text-muted)'}">${failed}</div><div class="summary-label">Failed</div></div>
+    <div class="summary-card"><div class="summary-number" style="color:var(--cyan)">${fmtSize(totalSize)}</div><div class="summary-label">Total Uploaded</div></div>
+    <div class="summary-card"><div class="summary-number" style="color:var(--purple)">${avgSpeed}</div><div class="summary-label">Avg MB/s</div></div>`;
+
+  // Speed chart
+  const maxSpeed = Math.max(...testResults.map(r=>parseFloat(r.speed||0)), 1);
+  $('speedChart').innerHTML = testResults.map((r,i) => {
+    const pct = (parseFloat(r.speed||0)/maxSpeed*100).toFixed(0);
+    return `<div class="chart-bar-row" style="animation-delay:${i*0.1}s">
+      <span class="chart-label">${r.name}</span>
+      <div class="chart-bar-wrap"><div class="chart-bar speed" style="width:${pct}%">${r.speed}</div></div>
+      <span class="chart-value">${r.speed} MB/s</span>
+    </div>`;
+  }).join('');
+
+  // Time chart
+  const maxTime = Math.max(...testResults.map(r=>parseFloat(r.time||0)), 1);
+  $('timeChart').innerHTML = testResults.map((r,i) => {
+    const pct = (parseFloat(r.time||0)/maxTime*100).toFixed(0);
+    return `<div class="chart-bar-row" style="animation-delay:${i*0.1}s">
+      <span class="chart-label">${r.name}</span>
+      <div class="chart-bar-wrap"><div class="chart-bar time" style="width:${pct}%">${r.time}</div></div>
+      <span class="chart-value">${r.time}s</span>
+    </div>`;
+  }).join('');
+
+  $('summarySection').style.display = 'block';
+
+  // Animate bars after render
+  requestAnimationFrame(() => {
+    document.querySelectorAll('.chart-bar').forEach(bar => {
+      const w = bar.style.width;
+      bar.style.width = '0%';
+      requestAnimationFrame(() => { bar.style.width = w; });
+    });
+  });
+}
+
+// ─── Confetti ─────────────────────────────
+function fireConfetti() {
+  const container = document.createElement('div');
+  container.className = 'confetti-container';
+  document.body.appendChild(container);
+  const colors = ['#22C55E','#3B82F6','#A855F7','#EAB308','#06B6D4','#F97316','#EF4444'];
+  for (let i = 0; i < 80; i++) {
+    const c = document.createElement('div');
+    c.className = 'confetti';
+    c.style.left = Math.random()*100+'%';
+    c.style.background = colors[Math.floor(Math.random()*colors.length)];
+    c.style.animationDelay = Math.random()*2+'s';
+    c.style.animationDuration = (2+Math.random()*2)+'s';
+    c.style.width = (4+Math.random()*8)+'px';
+    c.style.height = (4+Math.random()*8)+'px';
+    container.appendChild(c);
+  }
+  setTimeout(() => container.remove(), 5000);
+}
+
+// ─── System Monitor ───────────────────────
+let monitorTimer = null;
+let monitorRunning = false;
+const HISTORY_MAX = 60;
+const history = { cpu: [], rss: [], heap: [], load: [] };
+
+// Gauge helper: arc path length = π * 80 ≈ 251.3
+const GAUGE_ARC_LEN = 251.3;
+
+function setGauge(arcId, pct) {
+  const offset = GAUGE_ARC_LEN * (1 - Math.min(pct, 100) / 100);
+  const el = $(arcId);
+  el.setAttribute('stroke-dashoffset', offset);
+  // Color: green → yellow → orange → red
+  if (pct < 40) el.setAttribute('stroke', 'var(--green)');
+  else if (pct < 70) el.setAttribute('stroke', 'var(--yellow)');
+  else if (pct < 90) el.setAttribute('stroke', 'var(--orange)');
+  else el.setAttribute('stroke', 'var(--red)');
+}
+
+// Mini chart drawing (pure canvas, no library)
+function drawMiniChart(canvasId, data, color, maxVal) {
+  const canvas = $(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const w = rect.width, h = rect.height;
+
+  ctx.clearRect(0, 0, w, h);
+  if (data.length < 2) return;
+
+  const max = maxVal || Math.max(...data, 1) * 1.2;
+  const step = w / (HISTORY_MAX - 1);
+
+  // Fill
+  ctx.beginPath();
+  ctx.moveTo(0, h);
+  for (let i = 0; i < data.length; i++) {
+    const x = (HISTORY_MAX - data.length + i) * step;
+    const y = h - (data[i] / max) * (h - 4);
+    if (i === 0) ctx.lineTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.lineTo((HISTORY_MAX - 1) * step, h);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, color + '40');
+  grad.addColorStop(1, color + '05');
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  for (let i = 0; i < data.length; i++) {
+    const x = (HISTORY_MAX - data.length + i) * step;
+    const y = h - (data[i] / max) * (h - 4);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+
+  // Current value text
+  const last = data[data.length - 1];
+  ctx.fillStyle = color;
+  ctx.font = `bold 11px 'Fira Code', monospace`;
+  ctx.textAlign = 'right';
+  ctx.fillText(typeof last === 'number' ? last.toFixed(1) : last, w - 6, 14);
+}
+
+function formatUptime(sec) {
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  return `${m}m ${s}s`;
+}
+
+async function fetchMonitorData() {
+  try {
+    const res = await fetch(api() + '/stats');
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json;
+  } catch { return null; }
+}
+
+async function updateMonitor() {
+  const json = await fetchMonitorData();
+  if (!json) return;
+  const d = json;
+  const mem = d.memory;
+  const cpu = d.cpu;
+  const osInfo = d.os;
+
+  // Push history
+  history.cpu.push(cpu.percent);
+  history.rss.push(parseFloat(mem.rssMB));
+  history.heap.push(parseFloat(mem.heapUsedMB));
+  history.load.push(osInfo.loadAvg1m);
+  if (history.cpu.length > HISTORY_MAX) history.cpu.shift();
+  if (history.rss.length > HISTORY_MAX) history.rss.shift();
+  if (history.heap.length > HISTORY_MAX) history.heap.shift();
+  if (history.load.length > HISTORY_MAX) history.load.shift();
+
+  // CPU Gauge
+  setGauge('gaugeCpuArc', cpu.percent);
+  $('gaugeCpuVal').innerHTML = `${cpu.percent.toFixed(1)}<span class="stat-unit">%</span>`;
+  $('gaugeCpuSub').textContent = `${cpu.cores} cores | user ${cpu.userMs}ms sys ${cpu.systemMs}ms`;
+
+  // Memory Gauge (RSS as % of OS total)
+  const rssMB = parseFloat(mem.rssMB);
+  const rssPct = osInfo.totalMemMB > 0 ? (rssMB / osInfo.totalMemMB) * 100 : 0;
+  setGauge('gaugeMemArc', rssPct);
+  $('gaugeMemVal').innerHTML = `${mem.rssMB}<span class="stat-unit">MB</span>`;
+  $('gaugeMemSub').textContent = `heap: ${mem.heapUsedMB} / ${mem.heapTotalMB} MB`;
+
+  // OS Memory Bar
+  $('osMemBar').style.width = osInfo.memPercent + '%';
+  $('osMemText').textContent = `${osInfo.usedMemMB.toLocaleString()} / ${osInfo.totalMemMB.toLocaleString()} MB`;
+  $('osMemPctText').textContent = `${osInfo.memPercent}% used`;
+  const serverPct = rssPct;
+  $('osMemServerMark').style.left = Math.min(serverPct, 98) + '%';
+  $('osMemServerLabel').textContent = `Server ${rssMB.toFixed(0)}MB`;
+
+  // Process Details
+  $('pdHeapUsed').textContent = mem.heapUsedMB + ' MB';
+  $('pdHeapTotal').textContent = mem.heapTotalMB + ' MB';
+  $('pdRss').textContent = mem.rssMB + ' MB';
+  $('pdExternal').textContent = mem.externalMB + ' MB';
+  $('pdArrayBuf').textContent = mem.arrayBuffersMB + ' MB';
+  $('pdCpuUser').textContent = cpu.userMs + ' ms';
+  $('pdCpuSys').textContent = cpu.systemMs + ' ms';
+  $('pdUptime').textContent = formatUptime(d.uptime);
+
+  // OS Details
+  $('pdHostname').textContent = osInfo.hostname;
+  $('pdPlatform').textContent = osInfo.platform;
+  $('pdCores').textContent = cpu.cores;
+  $('pdTotalMem').textContent = (osInfo.totalMemMB / 1024).toFixed(1) + ' GB';
+  $('pdFreeMem').textContent = (osInfo.freeMemMB / 1024).toFixed(1) + ' GB';
+  $('pdUsedMem').textContent = (osInfo.usedMemMB / 1024).toFixed(1) + ' GB';
+  $('pdLoad1').textContent = osInfo.loadAvg1m;
+  $('pdLoad515').textContent = `${osInfo.loadAvg5m} / ${osInfo.loadAvg15m}`;
+
+  // Charts
+  drawMiniChart('chartCpu', history.cpu, '#06B6D4', 100);
+  drawMiniChart('chartMem', history.rss, '#22C55E');
+  drawMiniChart('chartHeap', history.heap, '#3B82F6');
+  drawMiniChart('chartLoad', history.load, '#A855F7');
+
+  // Also update the test-runner stats panel
+  $('sHeap').innerHTML = `${mem.heapUsedMB}<span class="stat-unit">MB</span>`;
+  $('sHeapTotal').innerHTML = `${mem.heapTotalMB}<span class="stat-unit">MB</span>`;
+  $('sRss').innerHTML = `${mem.rssMB}<span class="stat-unit">MB</span>`;
+  const m = Math.floor(d.uptime / 60), s = Math.floor(d.uptime % 60);
+  $('sUptime').innerHTML = `${m}:${String(s).padStart(2,'0')}<span class="stat-unit">min</span>`;
+  const heapPct = Math.min(100, parseFloat(mem.heapUsedMB) / parseFloat(mem.heapTotalMB) * 100);
+  $('memFill').style.width = heapPct + '%';
+  $('memLabel').textContent = heapPct.toFixed(1) + '%';
+}
+
+function toggleMonitor() {
+  if (monitorRunning) {
+    clearInterval(monitorTimer);
+    monitorRunning = false;
+    $('btnMonitorToggle').textContent = 'Start';
+    $('btnMonitorToggle').className = 'btn btn-green';
+    $('monitorDot').style.animationPlayState = 'paused';
+  } else {
+    updateMonitor();
+    monitorTimer = setInterval(updateMonitor, 2000);
+    monitorRunning = true;
+    $('btnMonitorToggle').textContent = 'Stop';
+    $('btnMonitorToggle').className = 'btn btn-red';
+    $('monitorDot').style.animationPlayState = 'running';
+  }
+}
+
+function clearHistory() {
+  history.cpu.length = 0;
+  history.rss.length = 0;
+  history.heap.length = 0;
+  history.load.length = 0;
+  ['chartCpu','chartMem','chartHeap','chartLoad'].forEach(id => {
+    const c = $(id); if (c) { const ctx = c.getContext('2d'); ctx.clearRect(0,0,c.width,c.height); }
+  });
+}
+
+// ─── Init ─────────────────────────────────
+// ─── CLI Results ──────────────────────────
+let cliAutoTimer = null;
+let cliResultsCache = [];
+
+async function fetchCliResults() {
+  try {
+    const resp = await fetch(api() + '/test-results');
+    const json = await resp.json();
+    if (!json.success || !json.data) return;
+    cliResultsCache = json.data;
+    renderCliResults(json.data);
+  } catch (e) {
+    console.warn('CLI results fetch failed:', e);
+  }
+}
+
+function renderCliResults(results) {
+  const total = results.length;
+  const passed = results.filter(r => r.status === 'PASS').length;
+  const failed = total - passed;
+  const totalMs = results.reduce((a, r) => a + (r.duration_ms || 0), 0);
+
+  $('cliTotal').textContent = total;
+  $('cliPassed').textContent = passed;
+  $('cliFailed').textContent = failed;
+  $('cliTotalTime').innerHTML = (totalMs / 1000).toFixed(1) + '<span class="stat-unit">s</span>';
+
+  if (total === 0) {
+    $('cliEmptyMsg').style.display = '';
+    $('cliTablePanel').style.display = 'none';
+    $('cliChartPanel').style.display = 'none';
+    return;
+  }
+
+  $('cliEmptyMsg').style.display = 'none';
+  $('cliTablePanel').style.display = '';
+  $('cliChartPanel').style.display = '';
+
+  // Table
+  $('cliTableBody').innerHTML = results.map(r => {
+    const isPassed = r.status === 'PASS';
+    const statusColor = isPassed ? 'var(--green)' : 'var(--red)';
+    const heapDelta = (r.start_heap && r.end_heap && r.start_heap !== 'N/A' && r.end_heap !== 'N/A')
+      ? `${r.start_heap} <span style="color:var(--text-muted);">-></span> ${r.end_heap}`
+      : '--';
+    const rssDelta = (r.start_rss && r.end_rss && r.start_rss !== 'N/A' && r.end_rss !== 'N/A')
+      ? `${r.start_rss} <span style="color:var(--text-muted);">-></span> ${r.end_rss}`
+      : '--';
+    const fdDelta = (r.start_fd && r.end_fd && r.start_fd !== 'N/A' && r.end_fd !== 'N/A')
+      ? `${r.start_fd} <span style="color:var(--text-muted);">-></span> ${r.end_fd}`
+      : '--';
+    const durSec = ((r.duration_ms || 0) / 1000).toFixed(2);
+    return `<tr style="border-bottom:1px solid var(--glass-border);">
+      <td style="padding:8px 12px;font-weight:500;">${r.scenario || '?'}</td>
+      <td style="padding:8px 12px;"><span style="color:${statusColor};font-weight:600;">${r.status || '?'}</span></td>
+      <td style="padding:8px 12px;text-align:right;font-family:var(--font-mono);font-size:12px;">${durSec}s</td>
+      <td style="padding:8px 12px;font-size:12px;font-family:var(--font-mono);">${heapDelta}<span style="color:var(--text-muted);font-size:10px;">MB</span></td>
+      <td style="padding:8px 12px;font-size:12px;font-family:var(--font-mono);">${rssDelta}<span style="color:var(--text-muted);font-size:10px;">MB</span></td>
+      <td style="padding:8px 12px;font-size:12px;font-family:var(--font-mono);">${fdDelta}</td>
+    </tr>`;
+  }).join('');
+
+  // Duration chart
+  const maxDur = Math.max(...results.map(r => r.duration_ms || 0), 1);
+  const barColors = ['var(--blue)', 'var(--green)', 'var(--purple)', 'var(--cyan)', 'var(--orange)', 'var(--yellow)', 'var(--red)'];
+  $('cliDurationChart').innerHTML = results.map((r, i) => {
+    const pct = Math.max(((r.duration_ms || 0) / maxDur) * 100, 2);
+    const sec = ((r.duration_ms || 0) / 1000).toFixed(1);
+    const color = barColors[i % barColors.length];
+    const label = (r.scenario || '').length > 22 ? (r.scenario || '').slice(0, 20) + '..' : (r.scenario || '');
+    const statusIcon = r.status === 'PASS'
+      ? '<span style="color:var(--green);margin-right:4px;">&#10003;</span>'
+      : '<span style="color:var(--red);margin-right:4px;">&#10007;</span>';
+    return `<div style="display:flex;align-items:center;gap:10px;margin:6px 0;">
+      <div style="width:180px;font-size:12px;text-align:right;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${r.scenario}">${statusIcon}${label}</div>
+      <div style="flex:1;height:22px;background:var(--bg-surface);border-radius:6px;overflow:hidden;">
+        <div style="height:100%;width:${pct}%;background:${color};border-radius:6px;transition:width 0.5s ease;"></div>
+      </div>
+      <div style="width:60px;font-size:12px;font-family:var(--font-mono);color:var(--text-primary);">${sec}s</div>
+    </div>`;
+  }).join('');
+}
+
+async function clearCliResults() {
+  try {
+    await fetch(api() + '/test-results', { method: 'DELETE' });
+    cliResultsCache = [];
+    renderCliResults([]);
+  } catch (e) {
+    console.warn('Clear failed:', e);
+  }
+}
+
+// Auto-refresh toggle
+document.addEventListener('change', e => {
+  if (e.target.id === 'cliAutoRefresh') {
+    if (e.target.checked) {
+      fetchCliResults();
+      cliAutoTimer = setInterval(fetchCliResults, 3000);
+    } else {
+      clearInterval(cliAutoTimer);
+      cliAutoTimer = null;
+    }
+  }
+});
+
+renderScenarios();
+checkConnection();
+</script>
+</body>
+</html>

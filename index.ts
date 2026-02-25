@@ -28,8 +28,20 @@ import { specs } from "./src/config/swagger.js";
 import { corsOptions, logCorsConfig } from "./src/config/cors.js";
 import s3Routes from "./src/router/s3Routes.js";
 import webDavRoutes from "./src/router/webDavRoutes.js";
+import { runStartupSweeper, scheduleSweeper } from "./src/bootstrap/tmpSweeper.js";
 
 const app = express();
+
+// ── Readiness flag (부팅 스위퍼 완료 전까지 not ready) ──
+let startupSweepDone = false;
+
+app.get("/ready", (_req, res) => {
+  if (startupSweepDone) {
+    res.status(200).json({ ready: true });
+  } else {
+    res.status(503).json({ ready: false });
+  }
+});
 
 // CORS 설정 로그 출력
 logCorsConfig();
@@ -158,4 +170,19 @@ const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {
   console.log("Server is running on port " + PORT);
   console.log("app version: " + pkg.version);
+
+  // 부팅 스위퍼: listen 직후 백그라운드 실행 (요청 수신 차단 없음)
+  // 서버 크래시 후 남은 multer tmp + merge tmp 정리
+  // 부팅 시점에는 진행중 업로드가 없으므로 짧은 TTL(10초)로 즉시 정리
+  // 부팅 직후에는 이전 세션의 stale lock이 남아있을 수 있으므로
+  // LOCK_STALE_MS를 0으로 설정하여 무조건 lock 획득
+  runStartupSweeper({ TTL_MS: 10_000, SAFE_WINDOW_MS: 5_000, LOCK_STALE_MS: 0 })
+    .catch(() => {})
+    .finally(() => {
+      startupSweepDone = true;
+      console.log("[ready] Startup sweeper done — server is ready");
+    });
+
+  // 주기 스위퍼: 1시간마다 6시간 이상 된 임시파일 정리
+  scheduleSweeper();
 });

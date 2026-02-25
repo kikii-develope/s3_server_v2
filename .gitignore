@@ -7,3 +7,10 @@ node_modules
 local.*
 
 .claude/
+
+# Test artifacts
+test/test_files/
+test/results/*.jsonl
+test/results/*.json
+test/results/*.log
+!test/results/.gitkeep

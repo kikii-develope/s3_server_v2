@@ -14,6 +14,8 @@ import {
     copyFileInWebDAV,
     getWebDAVStats
 } from '../controller/webdavController.js';
+import fs from 'fs';
+import path from 'path';
 
 const router = express.Router();
 
@@ -786,5 +788,56 @@ router.put('/copy', copyFileInWebDAV);
  *         description: 서버 오류
  */
 router.get('/stats', getWebDAVStats);
+
+/**
+ * @swagger
+ * /webdav/test-results:
+ *   get:
+ *     summary: CLI 테스트 결과 조회
+ *     description: test/results/results.jsonl 파일을 읽어 JSON 배열로 반환합니다
+ *     tags: [WebDAV]
+ *     responses:
+ *       200:
+ *         description: 테스트 결과 조회 성공
+ */
+router.get('/test-results', (req, res) => {
+    const resultsPath = path.resolve(process.cwd(), 'test/results/results.jsonl');
+    try {
+        if (!fs.existsSync(resultsPath)) {
+            return res.json({ success: true, data: [], message: 'No results file' });
+        }
+        const content = fs.readFileSync(resultsPath, 'utf-8').trim();
+        if (!content) {
+            return res.json({ success: true, data: [], message: 'Empty results' });
+        }
+        const results = content.split('\n').map(line => {
+            try { return JSON.parse(line); } catch { return null; }
+        }).filter(Boolean);
+        res.json({ success: true, data: results });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+/**
+ * @swagger
+ * /webdav/test-results:
+ *   delete:
+ *     summary: CLI 테스트 결과 초기화
+ *     description: test/results/results.jsonl 파일을 삭제합니다
+ *     tags: [WebDAV]
+ *     responses:
+ *       200:
+ *         description: 초기화 성공
+ */
+router.delete('/test-results', (req, res) => {
+    const resultsPath = path.resolve(process.cwd(), 'test/results/results.jsonl');
+    try {
+        if (fs.existsSync(resultsPath)) fs.unlinkSync(resultsPath);
+        res.json({ success: true, message: 'Results cleared' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
 
 export default router; 
