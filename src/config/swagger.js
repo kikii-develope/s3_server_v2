@@ -82,7 +82,7 @@ const options = {
       },
     },
   },
-  apis: ["./index.js", "./src/router/*.js"], // API 라우트 파일들
+  apis: ["./index.ts", "./src/router/*.js"], // API 라우트 파일들
 };
 
 export const specs = swaggerJsdoc(options);

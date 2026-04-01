@@ -1,0 +1,10 @@
+services:
+  s3-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env.onprem
+    ports:
+      - "8989:8989"
+    restart: unless-stopped

@@ -4,7 +4,7 @@
   "main": "dist/index.js",
   "type": "commonjs",
   "scripts": {
-    "dev": "tsx watch index.ts",
+    "dev": "tsx watch --env-file=.env.development index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "docker:dev": "docker-compose -f docker-compose.dev.yml up --build",
@@ -12,7 +12,10 @@
     "docker:prod": "docker-compose -f docker-compose.prod.yml up --build",
     "docker:prod:detach": "docker-compose -f docker-compose.prod.yml up -d --build",
     "docker:stop:dev": "docker-compose -f docker-compose.dev.yml down",
-    "docker:stop:prod": "docker-compose -f docker-compose.prod.yml down"
+    "docker:stop:prod": "docker-compose -f docker-compose.prod.yml down",
+    "docker:onprem": "docker-compose -f docker-compose.onprem.yml up --build",
+    "docker:onprem:detach": "docker-compose -f docker-compose.onprem.yml up -d --build",
+    "docker:stop:onprem": "docker-compose -f docker-compose.onprem.yml down"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.817.0",
