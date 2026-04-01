@@ -136,8 +136,8 @@ jobs:
             --query 'taskDefinition' \
             > task-definition.json
 
-          # 불필요한 필드 제거
-          cat task-definition.json | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' > clean-task-definition.json
+          # 불필요한 필드 제거 + 아키텍처 X86_64로 변경
+          cat task-definition.json | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy) | .runtimePlatform.cpuArchitecture = "X86_64"' > clean-task-definition.json
           mv clean-task-definition.json task-definition.json
 
       - name: Determine image tag
