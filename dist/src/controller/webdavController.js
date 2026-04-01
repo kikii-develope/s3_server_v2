@@ -106,29 +106,34 @@ const uploadFileToWebDAV = async (req, res) => {
         // contentHash와 ETag 생성
         const contentHash = (0, etag_js_1.calculateHash)(file.buffer);
         const etag = (0, etag_js_1.generateEtag)(contentHash);
-        // file_metadata INSERT
-        const metadata = await fileMetadataRepo.create({
-            domainType: domain_type || null,
-            domainId: domain_id ? parseInt(domain_id) : null,
-            filePath: filePath,
-            fileName: actualFilename,
-            extension: extension,
-            mimeType: mimeType,
-            fileSize: file.size,
-            contentHash: contentHash,
-            etag: etag,
-            status: 'ACTIVE'
-        });
-        // history 기록
-        await fileHistoryRepo.create({
-            fileMetadataId: metadata.id,
-            action: 'UPLOAD',
-            oldEtag: null,
-            newEtag: etag,
-            oldHash: null,
-            newHash: contentHash,
-            changedBy: userId || 'system'
-        });
+        // file_metadata INSERT (DB 실패해도 업로드 응답은 성공 처리)
+        let metadata = { id: null };
+        try {
+            metadata = await fileMetadataRepo.create({
+                domainType: domain_type || null,
+                domainId: domain_id ? parseInt(domain_id) : null,
+                filePath: filePath,
+                fileName: actualFilename,
+                extension: extension,
+                mimeType: mimeType,
+                fileSize: file.size,
+                contentHash: contentHash,
+                etag: etag,
+                status: 'ACTIVE'
+            });
+            // history 기록
+            await fileHistoryRepo.create({
+                fileMetadataId: metadata.id,
+                action: 'UPLOAD',
+                oldEtag: null,
+                newEtag: etag,
+                oldHash: null,
+                newHash: contentHash,
+                changedBy: userId || 'system'
+            });
+        } catch (dbError) {
+            console.error('메타데이터 DB 저장 실패 (파일 업로드는 성공):', dbError.message);
+        }
         res.set('ETag', (0, etag_js_1.formatEtagHeader)(etag));
         return (0, response_js_1.successResponse)(res, 'WebDAV 파일 업로드 성공', {
             path: `${(0, webdavClient_js_1.getBaseUrl)()}/${filePath}`,
