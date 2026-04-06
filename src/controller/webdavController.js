@@ -19,6 +19,8 @@ import * as fileHistoryRepo from '../repositories/fileHistoryRepo.js';
 import pool from '../config/database.js';
 import { calculateHash, generateEtag, compareHash, parseIfMatchHeader, formatEtagHeader } from '../utils/etag.js';
 
+const webdavRoot = process.env.WEBDAV_ROOT_PATH || 'www';
+
 /**
  * URL 또는 경로에서 실제 파일 경로만 추출
  * @param {string} input - 전체 URL 또는 경로
@@ -37,11 +39,13 @@ const extractFilePath = (input) => {
         }
     }
 
-    // /www/로 시작하면 제거
-    if (input.startsWith('/www/')) {
-        input = input.slice(5); // '/www/' 제거
-    } else if (input.startsWith('/www')) {
-        input = input.slice(4); // '/www' 제거
+    // /{webdavRoot}/로 시작하면 제거
+    const rootPrefix = `/${webdavRoot}/`;
+    const rootPrefixNoSlash = `/${webdavRoot}`;
+    if (input.startsWith(rootPrefix)) {
+        input = input.slice(rootPrefix.length);
+    } else if (input.startsWith(rootPrefixNoSlash)) {
+        input = input.slice(rootPrefixNoSlash.length);
     }
 
     // 앞의 슬래시 제거
@@ -153,7 +157,7 @@ export const downloadFileFromWebDAV = async (req, res) => {
         // URL에서 실제 경로 추출
         const filePath = extractFilePath(rawPath);
 
-        const fullPath = `${getBaseUrl()}/www/${filePath}`;
+        const fullPath = `${getBaseUrl()}/${webdavRoot}/${filePath}`;
 
         const fileBuffer = await getFile(fullPath);
 
@@ -256,7 +260,7 @@ export const getWebDAVDirectory = async (req, res) => {
         // URL에서 실제 경로 추출 및 디코딩
         const dirPath = extractFilePath(decodeURIComponent(rawPath));
 
-        const directory = await existDirectory(`/www/${dirPath}`);
+        const directory = await existDirectory(`/${webdavRoot}/${dirPath}`);
 
         return successResponse(res, 'WebDAV 디렉토리 조회 성공', { path: dirPath, directory });
 
@@ -618,7 +622,7 @@ export const deleteDirectoryFromWebDAV = async (req, res) => {
 
         // force가 false일 때 디렉토리 내용 확인
         if (!force) {
-            const contents = await getDirectoryContents(`/www/${dirPath}`);
+            const contents = await getDirectoryContents(`/${webdavRoot}/${dirPath}`);
 
             if (contents && contents.length > 0) {
                 return errorResponse(res, '디렉토리 내부에 파일이 있습니다. 삭제하려면 force=true를 사용하세요.', 409, {
