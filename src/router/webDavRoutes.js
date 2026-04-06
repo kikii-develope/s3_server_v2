@@ -1,5 +1,6 @@
 import express from 'express';
 import multer from 'multer';
+import fs from 'fs';
 import {
     uploadFileToWebDAV,
     downloadFileFromWebDAV,
@@ -12,11 +13,40 @@ import {
     deleteDirectoryFromWebDAV,
     moveFileInWebDAV,
     copyFileInWebDAV,
-    getWebDAVStats
+    getWebDAVStats,
+    uploadWithConvert,
+    getConvertStatus
 } from '../controller/webdavController.js';
+import { fileFilter } from '../middleware/fileFilter.js';
+import { checkDiskSpace } from '../middleware/diskCheck.js';
 
 const router = express.Router();
+
+// 기존 로직용 memoryStorage (유지)
 const upload = multer({ storage: multer.memoryStorage(), preservePath: false });
+
+// ─── [v7] 변환 전용 diskStorage 설정 ────────────────────────────────────
+const TEMP_DIR = process.env.TEMP_DIR || '/tmp/upload-temp';
+const diskStorage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        if (!fs.existsSync(TEMP_DIR)) {
+            fs.mkdirSync(TEMP_DIR, { recursive: true });
+        }
+        cb(null, TEMP_DIR);
+    },
+    filename: (req, file, cb) => {
+        cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}-${file.originalname}`);
+    }
+});
+const uploadConvert = multer({
+    storage: diskStorage,
+    fileFilter: fileFilter,
+    limits: { fileSize: 10 * 1024 * 1024 * 1024 }, // 최대 10GB 허용
+});
+
+// v7 신규 API - 파일 업로드 및 자동 변환
+router.post('/upload-convert', checkDiskSpace, uploadConvert.single('file'), uploadWithConvert);
+router.get('/convert-status/:id', getConvertStatus);
 
 
 /**

@@ -164,4 +164,30 @@ const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {
   console.log("Server is running on port " + PORT);
   console.log("app version: " + pkg.version);
+
+  // ==========================================
+  // [v7 미디어 변환] 백그라운드 서비스 기동
+  // ==========================================
+  console.log("V7 Media System Startup...");
+
+  import('./src/utils/tempCleaner.js').then((cleaner) => {
+    cleaner.cleanupOnStartup();
+    cleaner.startPeriodicCleanup();
+    console.log("- Temp Cleaner started");
+  });
+
+  import('./src/services/watchdog.js').then((watchdog) => {
+    watchdog.startWatchdog();
+    console.log("- Watchdog (stuck/zombie recovery) started");
+  });
+
+  import('./src/services/videoQueue.js').then((queue) => {
+    queue.startVideoWorker();
+    console.log("- Video Worker (BullMQ) started");
+  });
+
+  import('./src/utils/dbLogger.js').then((logger) => {
+    logger.startLogPruner();
+    console.log("- DB Logger prune task started");
+  });
 });

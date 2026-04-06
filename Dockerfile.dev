@@ -1,5 +1,8 @@
 FROM node:20-alpine
 
+# ffmpeg 설치 (영상 변환에 필요)
+RUN apk add --no-cache ffmpeg
+
 WORKDIR /app
 
 RUN npm install -g nodemon

@@ -796,3 +796,175 @@ export const getWebDAVStats = async (req, res) => {
         return errorResponse(res, error.message);
     }
 };
+
+// ==========================================
+// v7 미디어 변환 전용 추가 로직
+// ==========================================
+
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import * as convertRepo from '../repositories/convertMetadataRepo.js';
+import { hashFileStream, findDuplicate } from '../services/dedup.js';
+import { isVideo, isImage, processImage } from '../services/mediaProcessor.js';
+import { addVideoJob } from '../services/videoQueue.js';
+import { atomicUpload } from '../services/web_dav/webdavClient.js';
+import { safeDelete, safeDeleteMany } from '../utils/tempCleaner.js';
+import { dbLog } from '../utils/dbLogger.js';
+
+export const uploadWithConvert = async (req, res) => {
+    const file = req.file; // diskStorage에 의해 저장된 파일
+
+    if (!file) {
+        return errorResponse(res, '파일이 거부되었거나 전송되지 않았습니다.', 400);
+    }
+
+    const { path: rawPath, domain_type, domain_id } = req.body;
+    const uploadPath = extractFilePath(rawPath);
+    if (!uploadPath) {
+        safeDelete(file.path);
+        return errorResponse(res, 'path가 필요합니다.', 400);
+    }
+    const ext = file.originalname.split('.').pop()?.toLowerCase();
+
+    let hash;
+    try {
+        // ── 1. 스트림 기반 SHA-256 해시 계산 ──
+        hash = await hashFileStream(file.path);
+
+        // ── 2. UNIQUE 제약 조건을 활용한 INSERT 및 경쟁 조건(Race Condition) 방어 ──
+        let record;
+        try {
+            record = await convertRepo.create({
+                domainType: domain_type || null,
+                domainId: domain_id ? parseInt(domain_id) : null,
+                originalPath: `${uploadPath}/${file.originalname}`,
+                originalName: file.originalname,
+                originalExt: ext,
+                originalSize: file.size,
+                mimeType: file.mimetype,
+                contentHash: hash,
+                etag: `"${hash.substring(0, 16)}"`,
+            });
+        } catch (err) {
+            if (err.code === 'ER_DUP_ENTRY') {
+                // 이미 동일 해시 파일이 업로드/변환된 상태 (혹은 처리 중)
+                const existing = await findDuplicate(hash);
+                safeDelete(file.path); // 로컬 임시파일 즉시 삭제
+
+                if (existing) {
+                    return successResponse(res, '기변환 파일 재사용', {
+                        convertedPath: existing.converted_path,
+                        reused: true,
+                    });
+                }
+                return res.status(409).json({ message: '동일 파일 변환 중이거나 대기 중입니다.', status: 409 });
+            }
+            throw err;
+        }
+
+        // ── 3. 비디오 처리 (BullMQ 비동기) ──
+        if (isVideo(file.mimetype)) {
+            const newName = `${Date.now()}-${crypto.randomUUID()}.${process.env.VIDEO_OUTPUT_FORMAT || 'mp4'}`;
+            const webdavPath = `${uploadPath}/${newName}`;
+
+            // (1) 잡 생성
+            const job = await addVideoJob(record.id, file.path, webdavPath);
+            // (2) 생성된 job_id를 DB에 확실히 저장 후 응답 (순서 보장)
+            await convertRepo.updateJobId(record.id, job.id);
+
+            return res.status(202).json({
+                message: '영상 업로드 및 변환 작업 접수 완료',
+                status: 202,
+                jobId: job.id,
+                statusUrl: `/webdav/convert-status/${record.id}`,
+            });
+        }
+
+        // ── 4. 이미지 처리 (Sharp 동기) ──
+        if (!isImage(file.mimetype)) {
+            // 이미지, 비디오 외 문서 등
+            await convertRepo.updateStatus(record.id, 'skipped');
+            // 곧바로 NAS에 atomic 업로드
+            await atomicUpload(`/www/${uploadPath}/${file.originalname}`, file.path);
+            safeDelete(file.path);
+            return successResponse(res, '업로드 완료 (변환 불필요)', { path: `${uploadPath}/${file.originalname}` });
+        }
+
+        let outputPath = null;
+        try {
+            await convertRepo.updateStatus(record.id, 'processing');
+            const result = await processImage(file.path);
+            outputPath = result.outputPath;
+
+            const newName = `${Date.now()}-${crypto.randomUUID()}.${result.format}`;
+            const webdavPath = `/www/${uploadPath}/${newName}`;
+
+            // uploading 상태 변경 + tempPath 저장
+            await convertRepo.updateStatus(record.id, 'uploading');
+            const tempNasPath = `${webdavPath}.__uploading__`;
+            await convertRepo.saveTempPath(record.id, tempNasPath);
+
+            // Atomic 원자적 업로드
+            await atomicUpload(webdavPath, outputPath);
+
+            const stat = fs.statSync(outputPath);
+            // 완료 처리
+            await convertRepo.markCompleted(record.id, {
+                convertedPath: `${uploadPath}/${newName}`,
+                convertedName: newName,
+                convertedExt: result.format,
+                convertedSize: stat.size,
+            });
+
+            safeDeleteMany(file.path, outputPath);
+            return successResponse(res, '이미지 변환 및 업로드 완료', {
+                conversion: {
+                    from: ext,
+                    to: result.format,
+                    originalSize: file.size,
+                    convertedSize: stat.size,
+                },
+                path: `${uploadPath}/${newName}`
+            });
+        } catch (processErr) {
+            // 이미지 변환 및 업로드 에러 핸들링
+            await convertRepo.updateStatus(record.id, 'failed', processErr.message);
+            await dbLog('error', `이미지 처리 실패: ${processErr.message}`, record.id);
+            safeDeleteMany(file.path, outputPath);
+            return errorResponse(res, processErr.message, 500);
+        }
+    } catch (globalErr) {
+        // 최초 DB INSERT 등에 실패한 경우
+        safeDelete(file.path);
+        return errorResponse(res, globalErr.message, 500);
+    }
+};
+
+export const getConvertStatus = async (req, res) => {
+    try {
+        const id = parseInt(req.params.id, 10);
+        if (isNaN(id)) {
+            return errorResponse(res, '유효하지 않은 상태 조회 ID입니다.', 400);
+        }
+
+        const row = await convertRepo.findById(id);
+        if (!row) {
+            return errorResponse(res, '변환 메타데이터를 찾을 수 없습니다.', 404);
+        }
+
+        return successResponse(res, '변환 상태 조회 성공', {
+            id: row.id,
+            convertStatus: row.convert_status,
+            jobId: row.convert_job_id,
+            failureType: row.failure_type,
+            error: row.convert_error,
+            convertedPath: row.converted_path,
+            retryCount: row.retry_count,
+            updatedAt: row.updated_at,
+            completedAt: row.completed_at,
+        });
+    } catch (err) {
+        return errorResponse(res, err.message, 500);
+    }
+};

@@ -119,8 +119,13 @@ export const createDirectory = async (path) => {
   try {
     await client.createDirectory(`/www/${path}`);
   } catch (error) {
-    console.error(error);
-    throw error;
+    const code = error?.status || error?.statusCode;
+    const msg = String(error?.message || '');
+    const maybeAlreadyExists = code === 405 || code === 409 || /exists|allowed/i.test(msg);
+    if (!maybeAlreadyExists) {
+      console.error(error);
+      throw error;
+    }
   }
 }
 
@@ -151,8 +156,13 @@ export const uploadSingle = async (path, file, filename) => {
 
 /** 상위부터 한 계단씩 존재 여부 확인 후 생성 */
 export const ensureDirectory = async (path) => {
-
-  const normalized = normalizeWebDAVPath(path);
+  let normalized = normalizeWebDAVPath(path);
+  // '/www/...' 형태로 들어온 절대 경로는 내부 처리용 상대 경로로 정규화
+  if (normalized === "/www") {
+    normalized = "/";
+  } else if (normalized.startsWith("/www/")) {
+    normalized = normalized.slice(4);
+  }
 
   if (!normalized || normalized === "/") return;
 
@@ -432,3 +442,89 @@ export const updateFile = async (path, file, filename) => {
     throw error;
   }
 }
+
+// ==========================================
+// v7 미디어 변환 전용 추가 로직
+// ==========================================
+
+export const clientInstance = client; // client 객체 노출 (삭제 작업 등)
+
+/**
+ * 안전한 Stream 업로드 (양방향 에러 핸들링, timeout 0)
+ * 메모리 사용량: ~64KB 고정
+ */
+const streamUploadSafe = (webdavPath, localFilePath) => {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (err) => {
+      if (!settled) {
+        settled = true;
+        reject(err);
+      }
+    };
+
+    const rs = fs.createReadStream(localFilePath);
+    const ws = client.createWriteStream(webdavPath);
+
+    // 대용량 파일 timeout 방지 (v7)
+    if (rs.setTimeout) rs.setTimeout(0);
+    if (ws.setTimeout) ws.setTimeout(0);
+
+    rs.on('error', (e) => {
+      fail(e);
+      ws.destroy();
+    });
+
+    ws.on('error', (e) => {
+      fail(e);
+      rs.destroy();
+    });
+
+    ws.on('finish', () => {
+      if (!settled) {
+        settled = true;
+        resolve();
+      }
+    });
+
+    rs.pipe(ws);
+  });
+};
+
+/**
+ * 원자적 업로드: 임시 경로(.__uploading__)에 먼저 업로드 후 완료 시 rename
+ * NAS에 깨진 파일이 남는 것을 원천 방지
+ */
+export const atomicUpload = async (finalPath, localFilePath) => {
+  // webdav는 상위 디렉토리가 없으면 에러나므로 기존 보장 로직 활용
+  const dirPath = finalPath.split('/').slice(0, -1).join('/');
+  await ensureDirectory(dirPath);
+
+  const tempPath = `${finalPath}.__uploading__`;
+
+  // 1. 임시 경로에 업로드
+  await streamUploadSafe(tempPath, localFilePath);
+
+  // 2. 업로드 완료 후 최종 경로로 이동 (원자적 교체)
+  try {
+    await client.moveFile(tempPath, finalPath, { overwrite: true });
+  } catch (moveErr) {
+    // rename 실패 시 temp 파일 정리
+    try {
+      await client.deleteFile(tempPath);
+    } catch { }
+    throw moveErr;
+  }
+};
+
+/**
+ * NAS 파일 존재 여부 확인 (멱등성 체크용)
+ */
+export const webdavFileExists = async (path) => {
+  try {
+    await client.stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+};

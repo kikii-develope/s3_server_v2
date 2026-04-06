@@ -5,9 +5,34 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const multer_1 = __importDefault(require("multer"));
+const fs_1 = __importDefault(require("fs"));
 const webdavController_js_1 = require("../controller/webdavController.js");
+const fileFilter_js_1 = require("../middleware/fileFilter.js");
+const diskCheck_js_1 = require("../middleware/diskCheck.js");
 const router = express_1.default.Router();
+// 기존 로직용 memoryStorage (유지)
 const upload = (0, multer_1.default)({ storage: multer_1.default.memoryStorage(), preservePath: false });
+// ─── [v7] 변환 전용 diskStorage 설정 ────────────────────────────────────
+const TEMP_DIR = process.env.TEMP_DIR || '/tmp/upload-temp';
+const diskStorage = multer_1.default.diskStorage({
+    destination: (req, file, cb) => {
+        if (!fs_1.default.existsSync(TEMP_DIR)) {
+            fs_1.default.mkdirSync(TEMP_DIR, { recursive: true });
+        }
+        cb(null, TEMP_DIR);
+    },
+    filename: (req, file, cb) => {
+        cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}-${file.originalname}`);
+    }
+});
+const uploadConvert = (0, multer_1.default)({
+    storage: diskStorage,
+    fileFilter: fileFilter_js_1.fileFilter,
+    limits: { fileSize: 10 * 1024 * 1024 * 1024 }, // 최대 10GB 허용
+});
+// v7 신규 API - 파일 업로드 및 자동 변환
+router.post('/upload-convert', diskCheck_js_1.checkDiskSpace, uploadConvert.single('file'), webdavController_js_1.uploadWithConvert);
+router.get('/convert-status/:id', webdavController_js_1.getConvertStatus);
 /**
  * @swagger
  * /webdav/info:

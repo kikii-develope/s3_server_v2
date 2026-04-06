@@ -20,9 +20,11 @@ const options = {
         },
         servers: [
             {
-                url: process.env.PORT == 80
-                    ? "https://file-server.kiki-bus.com"
-                    : `http://kikii.iptime.org:${process.env.PORT || 8000}`,
+                url: "https://file-server.kiki-bus.com",
+                description: "Production server",
+            },
+            {
+                url: `http://kikii.iptime.org:${process.env.PORT || 8000}`,
                 description: "Development server",
             },
         ],
@@ -85,6 +87,6 @@ const options = {
             },
         },
     },
-    apis: ["./index.js", "./src/router/*.js"], // API 라우트 파일들
+    apis: ["./index.ts", "./src/router/*.js"], // API 라우트 파일들
 };
 exports.specs = (0, swagger_jsdoc_1.default)(options);
