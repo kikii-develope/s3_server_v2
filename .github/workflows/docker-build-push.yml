@@ -41,9 +41,9 @@ jobs:
       - name: Build Docker image (test)
         run: docker build -t ${{ env.ECR_REPOSITORY }}:test .
 
-  # main 브랜치 또는 태그: 빌드, 푸시, ECS 배포
+  # main 브랜치 또는 태그: 빌드, 푸시, ECS 배포 (임시 비활성화)
   build-push-deploy:
-    if: github.event_name == 'push'
+    if: false
     runs-on: ubuntu-latest
     permissions:
       contents: read
