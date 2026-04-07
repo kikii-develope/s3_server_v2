@@ -15,6 +15,7 @@ import {
     copyFileInWebDAV,
     getWebDAVStats,
     uploadWithConvert,
+    uploadWithConvertMultiple,
     getConvertStatus
 } from '../controller/webdavController.js';
 import { fileFilter } from '../middleware/fileFilter.js';
@@ -44,8 +45,86 @@ const uploadConvert = multer({
     limits: { fileSize: 10 * 1024 * 1024 * 1024 }, // 최대 10GB 허용
 });
 
+/**
+ * @swagger
+ * /webdav/upload-convert:
+ *   post:
+ *     summary: WebDAV 파일 업로드 + 자동 변환
+ *     description: 이미지/영상/문서를 업로드하고 규칙에 따라 자동 변환 후 NAS(WebDAV)에 저장합니다.
+ *     tags: [WebDAV]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - file
+ *               - path
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *               path:
+ *                 type: string
+ *                 description: "업로드 하위 경로 (예: wh/test). WEBDAV_ROOT_PATH는 서버 설정에서 자동 적용됩니다."
+ *               domain_type:
+ *                 type: string
+ *               domain_id:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: 업로드/변환 완료 또는 기존 변환본 재사용
+ *       202:
+ *         description: 영상 변환 작업 접수 완료(비동기)
+ *       400:
+ *         description: 요청 오류 (파일/경로 누락 등)
+ *       409:
+ *         description: 동일 파일 처리 중/중복 충돌
+ *       500:
+ *         description: 서버 오류
+ */
 // v7 신규 API - 파일 업로드 및 자동 변환
 router.post('/upload-convert', checkDiskSpace, uploadConvert.single('file'), uploadWithConvert);
+
+/**
+ * @swagger
+ * /webdav/upload-convert-multiple:
+ *   post:
+ *     summary: WebDAV 다중 파일 업로드 + 자동 변환
+ *     description: 여러 파일을 한 번에 업로드하고 파일 유형별로 변환/큐잉/원본업로드 처리합니다.
+ *     tags: [WebDAV]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - files
+ *               - path
+ *             properties:
+ *               files:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *               path:
+ *                 type: string
+ *                 description: "업로드 하위 경로 (예: wh/test). WEBDAV_ROOT_PATH는 서버 설정에서 자동 적용됩니다."
+ *               domain_type:
+ *                 type: string
+ *               domain_id:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: 전체 파일 처리 결과 반환
+ *       400:
+ *         description: 요청 오류 (파일/경로 누락 등)
+ *       500:
+ *         description: 서버 오류
+ */
+router.post('/upload-convert-multiple', checkDiskSpace, uploadConvert.array('files', 20), uploadWithConvertMultiple);
 router.get('/convert-status/:id', getConvertStatus);
 
 

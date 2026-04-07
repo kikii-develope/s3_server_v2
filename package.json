@@ -13,6 +13,9 @@
     "docker:prod:detach": "docker-compose -f docker-compose.prod.yml up -d --build",
     "docker:stop:dev": "docker-compose -f docker-compose.dev.yml down",
     "docker:stop:prod": "docker-compose -f docker-compose.prod.yml down",
+    "docker:swagger-test": "docker-compose -f docker-compose.swagger-test.yml up --build",
+    "docker:swagger-test:detach": "docker-compose -f docker-compose.swagger-test.yml up -d --build",
+    "docker:stop:swagger-test": "docker-compose -f docker-compose.swagger-test.yml down",
     "docker:onprem": "docker-compose -f docker-compose.onprem.yml up --build",
     "docker:onprem:detach": "docker-compose -f docker-compose.onprem.yml up -d --build",
     "docker:stop:onprem": "docker-compose -f docker-compose.onprem.yml down"

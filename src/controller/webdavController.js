@@ -18,11 +18,12 @@ import * as fileMetadataRepo from '../repositories/fileMetadataRepo.js';
 import * as fileHistoryRepo from '../repositories/fileHistoryRepo.js';
 import pool from '../config/database.js';
 import { calculateHash, generateEtag, compareHash, parseIfMatchHeader, formatEtagHeader } from '../utils/etag.js';
+import { getWebdavRootPath } from '../utils/webdavRootPath.js';
 
 /**
  * URL 또는 경로에서 실제 파일 경로만 추출
  * @param {string} input - 전체 URL 또는 경로
- * @returns {string} - /www/ 이후의 실제 경로
+ * @returns {string} - WebDAV 루트 이후의 실제 경로
  */
 const extractFilePath = (input) => {
     if (!input) return input;
@@ -37,11 +38,21 @@ const extractFilePath = (input) => {
         }
     }
 
-    // /www/로 시작하면 제거
+    const rootPath = getWebdavRootPath();
+    const rootPrefix = `/${rootPath}`;
+
+    // 현재 루트(/kikii_test 또는 /www)가 포함되면 제거
+    if (input === rootPrefix) {
+        input = '';
+    } else if (input.startsWith(`${rootPrefix}/`)) {
+        input = input.slice(rootPrefix.length + 1);
+    }
+
+    // 하위 호환: /www 경로도 허용
     if (input.startsWith('/www/')) {
-        input = input.slice(5); // '/www/' 제거
-    } else if (input.startsWith('/www')) {
-        input = input.slice(4); // '/www' 제거
+        input = input.slice(5);
+    } else if (input === '/www') {
+        input = '';
     }
 
     // 앞의 슬래시 제거
@@ -153,7 +164,8 @@ export const downloadFileFromWebDAV = async (req, res) => {
         // URL에서 실제 경로 추출
         const filePath = extractFilePath(rawPath);
 
-        const fullPath = `${getBaseUrl()}/www/${filePath}`;
+        const rootPath = getWebdavRootPath();
+        const fullPath = `${getBaseUrl()}/${rootPath}/${filePath}`;
 
         const fileBuffer = await getFile(fullPath);
 
@@ -256,7 +268,7 @@ export const getWebDAVDirectory = async (req, res) => {
         // URL에서 실제 경로 추출 및 디코딩
         const dirPath = extractFilePath(decodeURIComponent(rawPath));
 
-        const directory = await existDirectory(`/www/${dirPath}`);
+        const directory = await existDirectory(dirPath);
 
         return successResponse(res, 'WebDAV 디렉토리 조회 성공', { path: dirPath, directory });
 
@@ -618,7 +630,7 @@ export const deleteDirectoryFromWebDAV = async (req, res) => {
 
         // force가 false일 때 디렉토리 내용 확인
         if (!force) {
-            const contents = await getDirectoryContents(`/www/${dirPath}`);
+            const contents = await getDirectoryContents(dirPath);
 
             if (contents && contents.length > 0) {
                 return errorResponse(res, '디렉토리 내부에 파일이 있습니다. 삭제하려면 force=true를 사용하세요.', 409, {
@@ -812,32 +824,37 @@ import { atomicUpload } from '../services/web_dav/webdavClient.js';
 import { safeDelete, safeDeleteMany } from '../utils/tempCleaner.js';
 import { dbLog } from '../utils/dbLogger.js';
 
-export const uploadWithConvert = async (req, res) => {
-    const file = req.file; // diskStorage에 의해 저장된 파일
+const toSuccessResult = (message, data = {}, status = 200) => ({
+    status,
+    body: { message, status, ...data },
+});
 
+const toErrorResult = (message, status = 500, data = {}) => ({
+    status,
+    body: { message: String(message || 'Internal server error'), status, ...data },
+});
+
+const processConvertUploadFile = async ({ file, rawPath, domainType, domainId }) => {
     if (!file) {
-        return errorResponse(res, '파일이 거부되었거나 전송되지 않았습니다.', 400);
+        return toErrorResult('파일이 거부되었거나 전송되지 않았습니다.', 400);
     }
 
-    const { path: rawPath, domain_type, domain_id } = req.body;
     const uploadPath = extractFilePath(rawPath);
     if (!uploadPath) {
         safeDelete(file.path);
-        return errorResponse(res, 'path가 필요합니다.', 400);
+        return toErrorResult('path가 필요합니다.', 400);
     }
-    const ext = file.originalname.split('.').pop()?.toLowerCase();
 
-    let hash;
+    const ext = file.originalname.split('.').pop()?.toLowerCase() || '';
+
     try {
-        // ── 1. 스트림 기반 SHA-256 해시 계산 ──
-        hash = await hashFileStream(file.path);
+        const hash = await hashFileStream(file.path);
 
-        // ── 2. UNIQUE 제약 조건을 활용한 INSERT 및 경쟁 조건(Race Condition) 방어 ──
         let record;
         try {
             record = await convertRepo.create({
-                domainType: domain_type || null,
-                domainId: domain_id ? parseInt(domain_id) : null,
+                domainType: domainType || null,
+                domainId: domainId ? parseInt(domainId, 10) : null,
                 originalPath: `${uploadPath}/${file.originalname}`,
                 originalName: file.originalname,
                 originalExt: ext,
@@ -848,47 +865,57 @@ export const uploadWithConvert = async (req, res) => {
             });
         } catch (err) {
             if (err.code === 'ER_DUP_ENTRY') {
-                // 이미 동일 해시 파일이 업로드/변환된 상태 (혹은 처리 중)
                 const existing = await findDuplicate(hash);
-                safeDelete(file.path); // 로컬 임시파일 즉시 삭제
+                safeDelete(file.path);
 
                 if (existing) {
-                    return successResponse(res, '기변환 파일 재사용', {
+                    return toSuccessResult('기변환 파일 재사용', {
+                        metadataId: existing.id,
                         convertedPath: existing.converted_path,
                         reused: true,
                     });
                 }
-                return res.status(409).json({ message: '동일 파일 변환 중이거나 대기 중입니다.', status: 409 });
+                return toErrorResult('동일 파일 변환 중이거나 대기 중입니다.', 409);
             }
             throw err;
         }
 
-        // ── 3. 비디오 처리 (BullMQ 비동기) ──
-        if (isVideo(file.mimetype)) {
+        if (isVideo(file.mimetype, ext)) {
             const newName = `${Date.now()}-${crypto.randomUUID()}.${process.env.VIDEO_OUTPUT_FORMAT || 'mp4'}`;
             const webdavPath = `${uploadPath}/${newName}`;
-
-            // (1) 잡 생성
             const job = await addVideoJob(record.id, file.path, webdavPath);
-            // (2) 생성된 job_id를 DB에 확실히 저장 후 응답 (순서 보장)
             await convertRepo.updateJobId(record.id, job.id);
 
-            return res.status(202).json({
-                message: '영상 업로드 및 변환 작업 접수 완료',
-                status: 202,
+            return toSuccessResult('영상 업로드 및 변환 작업 접수 완료', {
+                metadataId: record.id,
                 jobId: job.id,
                 statusUrl: `/webdav/convert-status/${record.id}`,
+            }, 202);
+        }
+
+        const rootPath = getWebdavRootPath();
+
+        // CYA는 ffmpeg 변환 대상에서 제외하고 원본 업로드 정책으로 처리
+        if (ext === 'cya') {
+            await convertRepo.updateStatus(record.id, 'skipped');
+            await atomicUpload(`/${rootPath}/${uploadPath}/${file.originalname}`, file.path);
+            safeDelete(file.path);
+            return toSuccessResult('CYA 원본 업로드 완료 (변환 생략)', {
+                metadataId: record.id,
+                path: `${uploadPath}/${file.originalname}`,
+                skipped: true,
             });
         }
 
-        // ── 4. 이미지 처리 (Sharp 동기) ──
-        if (!isImage(file.mimetype)) {
-            // 이미지, 비디오 외 문서 등
+        if (!isImage(file.mimetype, ext)) {
             await convertRepo.updateStatus(record.id, 'skipped');
-            // 곧바로 NAS에 atomic 업로드
-            await atomicUpload(`/www/${uploadPath}/${file.originalname}`, file.path);
+            await atomicUpload(`/${rootPath}/${uploadPath}/${file.originalname}`, file.path);
             safeDelete(file.path);
-            return successResponse(res, '업로드 완료 (변환 불필요)', { path: `${uploadPath}/${file.originalname}` });
+            return toSuccessResult('업로드 완료 (변환 불필요)', {
+                metadataId: record.id,
+                path: `${uploadPath}/${file.originalname}`,
+                skipped: true,
+            });
         }
 
         let outputPath = null;
@@ -898,18 +925,15 @@ export const uploadWithConvert = async (req, res) => {
             outputPath = result.outputPath;
 
             const newName = `${Date.now()}-${crypto.randomUUID()}.${result.format}`;
-            const webdavPath = `/www/${uploadPath}/${newName}`;
+            const webdavPath = `/${rootPath}/${uploadPath}/${newName}`;
 
-            // uploading 상태 변경 + tempPath 저장
             await convertRepo.updateStatus(record.id, 'uploading');
             const tempNasPath = `${webdavPath}.__uploading__`;
             await convertRepo.saveTempPath(record.id, tempNasPath);
 
-            // Atomic 원자적 업로드
             await atomicUpload(webdavPath, outputPath);
 
             const stat = fs.statSync(outputPath);
-            // 완료 처리
             await convertRepo.markCompleted(record.id, {
                 convertedPath: `${uploadPath}/${newName}`,
                 convertedName: newName,
@@ -918,27 +942,90 @@ export const uploadWithConvert = async (req, res) => {
             });
 
             safeDeleteMany(file.path, outputPath);
-            return successResponse(res, '이미지 변환 및 업로드 완료', {
+            return toSuccessResult('이미지 변환 및 업로드 완료', {
+                metadataId: record.id,
                 conversion: {
                     from: ext,
                     to: result.format,
                     originalSize: file.size,
                     convertedSize: stat.size,
                 },
-                path: `${uploadPath}/${newName}`
+                path: `${uploadPath}/${newName}`,
             });
         } catch (processErr) {
-            // 이미지 변환 및 업로드 에러 핸들링
             await convertRepo.updateStatus(record.id, 'failed', processErr.message);
             await dbLog('error', `이미지 처리 실패: ${processErr.message}`, record.id);
             safeDeleteMany(file.path, outputPath);
-            return errorResponse(res, processErr.message, 500);
+            return toErrorResult(processErr.message, 500, { metadataId: record.id });
         }
     } catch (globalErr) {
-        // 최초 DB INSERT 등에 실패한 경우
         safeDelete(file.path);
-        return errorResponse(res, globalErr.message, 500);
+        return toErrorResult(globalErr.message, 500);
     }
+};
+
+export const uploadWithConvert = async (req, res) => {
+    const result = await processConvertUploadFile({
+        file: req.file,
+        rawPath: req.body?.path,
+        domainType: req.body?.domain_type,
+        domainId: req.body?.domain_id,
+    });
+    return res.status(result.status).json(result.body);
+};
+
+export const uploadWithConvertMultiple = async (req, res) => {
+    const files = Array.isArray(req.files) ? req.files : [];
+    const { path: rawPath, domain_type, domain_id } = req.body || {};
+
+    if (!files.length) {
+        return errorResponse(res, '파일이 없습니다.', 400);
+    }
+
+    if (!rawPath) {
+        safeDeleteMany(...files.map((file) => file?.path).filter(Boolean));
+        return errorResponse(res, 'path가 필요합니다.', 400);
+    }
+
+    const results = [];
+    let queued = 0;
+    let converted = 0;
+    let skipped = 0;
+    let reused = 0;
+    let failed = 0;
+
+    for (const file of files) {
+        const result = await processConvertUploadFile({
+            file,
+            rawPath,
+            domainType: domain_type,
+            domainId: domain_id,
+        });
+
+        if (result.status === 202) queued += 1;
+        else if (result.status === 200 && result.body?.reused) reused += 1;
+        else if (result.status === 200 && result.body?.skipped) skipped += 1;
+        else if (result.status === 200) converted += 1;
+        else failed += 1;
+
+        results.push({
+            originalName: file.originalname,
+            status: result.status,
+            ...result.body,
+        });
+    }
+
+    return successResponse(res, '다중 업로드/변환 처리 완료', {
+        summary: {
+            total: files.length,
+            queued,
+            converted,
+            skipped,
+            reused,
+            failed,
+        },
+        results,
+    });
 };
 
 export const getConvertStatus = async (req, res) => {

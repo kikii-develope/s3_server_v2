@@ -29,8 +29,14 @@ const uniqueOutputPath = (ext) => {
 /**
  * MIME 타입으로 파일 종류 판별
  */
-export const isImage = (mimeType) => String(mimeType).startsWith('image/');
-export const isVideo = (mimeType) => String(mimeType).startsWith('video/');
+const VIDEO_EXT_HINTS = new Set(['mp4', 'avi', 'mov', 'wmv', 'mkv', 'flv', 'webm']);
+const IMAGE_EXT_HINTS = new Set(['jpg', 'jpeg', 'png', 'bmp', 'webp', 'tiff', 'gif']);
+
+export const isImage = (mimeType, ext = '') =>
+    String(mimeType).startsWith('image/') || IMAGE_EXT_HINTS.has(String(ext).toLowerCase());
+
+export const isVideo = (mimeType, ext = '') =>
+    String(mimeType).startsWith('video/') || VIDEO_EXT_HINTS.has(String(ext).toLowerCase());
 
 /**
  * 이미지 변환 (sharp, 동기 방식)

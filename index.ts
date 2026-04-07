@@ -154,6 +154,25 @@ app.get("/", (req, res) => {
   });
 });
 
+/**
+ * @swagger
+ * /health:
+ *   get:
+ *     summary: Health Check
+ *     description: 앱의 기본 상태를 확인합니다.
+ *     tags: [Health Check]
+ *     responses:
+ *       200:
+ *         description: 정상 응답
+ */
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    version: pkg.version,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 app.use(apiLogger); // API 요청/응답 로깅
 
 app.use("/webdav", webDavRoutes);

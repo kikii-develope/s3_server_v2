@@ -1,5 +1,7 @@
 services:
   s3-server:
+    profiles:
+      - onprem-disabled
     build:
       context: .
       dockerfile: Dockerfile
@@ -17,6 +19,8 @@ services:
       - redis
 
   redis:
+    profiles:
+      - onprem-disabled
     image: redis:7-alpine
     restart: unless-stopped
     ports:

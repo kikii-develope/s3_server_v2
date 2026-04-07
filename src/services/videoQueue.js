@@ -14,11 +14,13 @@ import { safeDeleteMany } from '../utils/tempCleaner.js';
 import { isRetryable } from '../utils/errorClassifier.js';
 import { dbLog } from '../utils/dbLogger.js';
 import * as repo from '../repositories/convertMetadataRepo.js';
+import { getWebdavRootPath } from '../utils/webdavRootPath.js';
 
 const connection = {
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT) || 6379,
 };
+const rootPath = getWebdavRootPath();
 
 // Queue 인스턴스
 export const videoQueue = new Queue('video-convert', { connection });
@@ -60,6 +62,7 @@ export const startVideoWorker = () => {
         async (job) => {
             const { metadataId, inputPath, webdavPath } = job.data;
             let outputPath = null;
+            let completed = false;
 
             // ── 1. DB 락 (중복 Worker 실행 방지) ──
             const locked = await repo.acquireLock(metadataId, workerId);
@@ -67,7 +70,7 @@ export const startVideoWorker = () => {
 
             try {
                 // ── 2. 멱등성 (이미 업로드 되어있나 체크) ──
-                if (await webdavFileExists(`/www/${webdavPath}`)) {
+                if (await webdavFileExists(webdavPath)) {
                     await repo.updateStatus(metadataId, 'completed');
                     safeDeleteMany(inputPath);
                     return;
@@ -88,10 +91,10 @@ export const startVideoWorker = () => {
 
                 // ── 4. uploading → atomic ──
                 await repo.updateStatus(metadataId, 'uploading');
-                const tempNasPath = `/www/${webdavPath}.__uploading__`;
+                const tempNasPath = `/${rootPath}/${webdavPath}.__uploading__`;
                 await repo.saveTempPath(metadataId, tempNasPath); // 충돌 시 cleanup 추적용
 
-                await atomicUpload(`/www/${webdavPath}`, outputPath);
+                await atomicUpload(`/${rootPath}/${webdavPath}`, outputPath);
 
                 // ── 5. completed ──
                 const stat = fs.statSync(outputPath);
@@ -102,8 +105,13 @@ export const startVideoWorker = () => {
                     convertedSize: stat.size,
                 });
                 await dbLog('info', '영상 변환 분산 처리 완료', metadataId);
+                completed = true;
             } finally {
-                safeDeleteMany(inputPath, outputPath);
+                if (completed) {
+                    safeDeleteMany(inputPath, outputPath);
+                } else {
+                    safeDeleteMany(outputPath);
+                }
                 await repo.releaseLock(metadataId);
             }
         },
@@ -114,6 +122,37 @@ export const startVideoWorker = () => {
         if (!job) return;
         const { metadataId, inputPath } = job.data;
         const retryable = isRetryable(err);
+        const maxAttempts = Number(job.opts?.attempts || 1);
+        const exhausted = Number(job.attemptsMade || 0) >= maxAttempts;
+
+        try {
+            const metadata = await repo.findById(metadataId);
+            const isCya = String(metadata?.original_ext || '').toLowerCase() === 'cya';
+
+            if (isCya && inputPath && fs.existsSync(inputPath) && (!retryable || exhausted)) {
+                const originalPath = String(metadata?.original_path || '').replace(/^\/+/, '');
+                if (originalPath) {
+                    await repo.updateStatus(metadataId, 'uploading');
+                    await repo.saveTempPath(metadataId, `/${rootPath}/${originalPath}.__uploading__`);
+                    await atomicUpload(`/${rootPath}/${originalPath}`, inputPath);
+
+                    const stat = fs.statSync(inputPath);
+                    await repo.markCompleted(metadataId, {
+                        convertedPath: originalPath,
+                        convertedName: path.basename(originalPath),
+                        convertedExt: metadata?.original_ext || path.extname(originalPath).replace('.', ''),
+                        convertedSize: stat.size,
+                    });
+
+                    safeDeleteMany(inputPath);
+                    await dbLog('warn', `CYA 변환 실패로 원본 업로드로 대체: ${err.message}`, metadataId);
+                    await repo.releaseLock(metadataId);
+                    return;
+                }
+            }
+        } catch (fallbackErr) {
+            await dbLog('error', `CYA fallback 처리 실패: ${fallbackErr.message}`, metadataId);
+        }
 
         await repo.updateStatus(metadataId, 'failed', err.message);
         await repo.updateFailureType(metadataId, retryable ? 'retryable' : 'permanent');
@@ -126,6 +165,8 @@ export const startVideoWorker = () => {
 
         if (!retryable) {
             job.discard(); // 영구 실패면 재시도 큐에서 완전 버림
+            safeDeleteMany(inputPath);
+        } else if (exhausted) {
             safeDeleteMany(inputPath);
         }
         await repo.releaseLock(metadataId);

@@ -6,7 +6,7 @@
 
 const ALLOWED = {
     image: ['jpg', 'jpeg', 'png', 'bmp', 'webp', 'tiff', 'gif'],
-    video: ['mp4', 'avi', 'mov', 'wmv', 'mkv', 'flv', 'webm'],
+    video: ['mp4', 'avi', 'mov', 'wmv', 'mkv', 'flv', 'webm', 'cya'],
     document: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'],
 };
 

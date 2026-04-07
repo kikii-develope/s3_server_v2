@@ -15,6 +15,10 @@ const options = {
     },
     servers: [
       {
+        url: process.env.SWAGGER_SERVER_URL || `http://localhost:${process.env.PORT || 8000}`,
+        description: "Local server",
+      },
+      {
         url: "https://file-server.kiki-bus.com",
         description: "Production server",
       },

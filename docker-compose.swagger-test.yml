@@ -1,0 +1,32 @@
+services:
+  s3-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    env_file:
+      - .env.development
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - SWAGGER_SERVER_URL=http://localhost:${SWAGGER_TEST_PORT:-8989}
+    ports:
+      - "${SWAGGER_TEST_PORT:-8989}:8000"
+    restart: unless-stopped
+    depends_on:
+      - redis
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
