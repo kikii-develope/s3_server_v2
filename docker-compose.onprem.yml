@@ -7,6 +7,8 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env.onprem
+    environment:
+      - REDIS_DB=1
     ports:
       - "8989:8989"
     restart: unless-stopped

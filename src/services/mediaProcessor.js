@@ -63,7 +63,7 @@ export const processVideo = (inputPath, options = {}) => {
     const format = options.format || process.env.VIDEO_OUTPUT_FORMAT || 'mp4';
     const codec = options.codec || process.env.VIDEO_CODEC || 'libx264';
     const crf = String(options.crf || process.env.VIDEO_CRF || '23');
-    const timeoutSec = parseInt(process.env.FFMPEG_TIMEOUT) || 600;
+    const timeoutSec = Number(options.timeoutSec || parseInt(process.env.FFMPEG_TIMEOUT) || 600);
     const outputPath = uniqueOutputPath(format);
 
     return new Promise((resolve, reject) => {

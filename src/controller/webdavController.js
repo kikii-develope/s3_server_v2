@@ -10,9 +10,11 @@ import {
     moveFile,
     copyFile,
     updateFile,
-    getDirectoryContents
+    getDirectoryContents,
+    resolveUniqueFilename
 } from '../services/web_dav/webdavClient.js';
 import mime from 'mime-types';
+import iconv from 'iconv-lite';
 import { successResponse, errorResponse } from '../utils/response.js';
 import * as fileMetadataRepo from '../repositories/fileMetadataRepo.js';
 import * as fileHistoryRepo from '../repositories/fileHistoryRepo.js';
@@ -63,6 +65,42 @@ const extractFilePath = (input) => {
     return input;
 };
 
+const normalizeOriginalFilename = (name = '') => {
+    const raw = String(name || '');
+    if (!raw) return raw;
+    const hasHangul = /[가-힣]/.test(raw);
+    const hasLatin1High = /[\u00C0-\u00FF]/.test(raw);
+    if (hasHangul && !hasLatin1High) return raw.normalize('NFC');
+
+    try {
+        const decoded = iconv.decode(Buffer.from(raw, 'latin1'), 'utf-8');
+        const candidate = String(decoded || raw).normalize('NFC');
+
+        // 디코딩 결과가 한글을 복구하면 우선 사용
+        if (/[가-힣]/.test(candidate) && !hasHangul) {
+            return candidate;
+        }
+
+        // 기존 이름보다 mojibake 흔적(고ASCII 연속)이 줄어들면 교체
+        const mojibakeScore = (s) => (s.match(/[\u00C0-\u00FF]/g) || []).length;
+        if (mojibakeScore(candidate) < mojibakeScore(raw)) {
+            return candidate;
+        }
+
+        return raw.normalize('NFC');
+    } catch {
+        return raw.normalize('NFC');
+    }
+};
+
+const flowLog = (payload) => {
+    try {
+        console.log(`[UPLOAD_FLOW] ${JSON.stringify(payload)}`);
+    } catch {
+        // 로그 직렬화 실패 시 무시
+    }
+};
+
 /**
  * WebDAV 파일 업로드 컨트롤러
  * @param {Object} req - Express request 객체
@@ -81,8 +119,12 @@ export const uploadFileToWebDAV = async (req, res) => {
             return errorResponse(res, 'path가 필요합니다.', 400);
         }
 
+        if (file?.originalname) {
+            file.originalname = normalizeOriginalFilename(file.originalname);
+        }
+
         // filename이 없으면 file.originalname 사용
-        const uploadFilename = filename || file.originalname;
+        const uploadFilename = normalizeOriginalFilename(filename || file.originalname);
 
         const result = await uploadSingle(path, file, uploadFilename);
 
@@ -312,6 +354,12 @@ export const uploadMultipleFilesToWebDAV = async (req, res) => {
 
         if (!files || files.length === 0) {
             return errorResponse(res, '파일이 없습니다.', 400);
+        }
+
+        for (const file of files) {
+            if (file?.originalname) {
+                file.originalname = normalizeOriginalFilename(file.originalname);
+            }
         }
 
         let filenamesArray = [];
@@ -809,6 +857,173 @@ export const getWebDAVStats = async (req, res) => {
     }
 };
 
+export const getDashboardMetrics = async (req, res) => {
+    try {
+        const rawWindowMinutes = parseInt(req.query.windowMinutes, 10);
+        const windowMinutes = Number.isFinite(rawWindowMinutes)
+            ? Math.max(5, Math.min(rawWindowMinutes, 240))
+            : 60;
+
+        const [statusRows] = await convertPool.execute(`
+            SELECT convert_status, COUNT(*) AS count
+            FROM file_convert_metadata
+            GROUP BY convert_status
+        `);
+
+        const queueFromDb = {
+            waiting: 0,
+            active: 0,
+            completed: 0,
+            failed: 0,
+        };
+
+        statusRows.forEach((row) => {
+            const status = String(row.convert_status || '').toLowerCase();
+            const count = Number(row.count || 0);
+            if (status === 'uploaded') queueFromDb.waiting += count;
+            if (status === 'processing' || status === 'uploading') queueFromDb.active += count;
+            if (status === 'completed' || status === 'skipped') queueFromDb.completed += count;
+            if (status === 'failed') queueFromDb.failed += count;
+        });
+
+        const [throughputRows] = await convertPool.execute(
+            `
+            SELECT
+                DATE_FORMAT(bucket_time, '%H:%i') AS time,
+                SUM(CASE WHEN convert_status IN ('completed', 'skipped') THEN 1 ELSE 0 END) AS processed,
+                SUM(CASE WHEN convert_status = 'failed' THEN 1 ELSE 0 END) AS failed
+            FROM (
+                SELECT
+                    FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(COALESCE(completed_at, updated_at)) / 300) * 300) AS bucket_time,
+                    convert_status
+                FROM file_convert_metadata
+                WHERE COALESCE(completed_at, updated_at) >= DATE_SUB(NOW(), INTERVAL ? MINUTE)
+            ) buckets
+            GROUP BY bucket_time
+            ORDER BY bucket_time ASC
+            `,
+            [windowMinutes]
+        );
+
+        const [failureRows] = await convertPool.execute(
+            `
+            SELECT
+                SUM(CASE WHEN convert_status = 'failed' THEN 1 ELSE 0 END) AS failedCount,
+                COUNT(*) AS totalCount
+            FROM file_convert_metadata
+            WHERE updated_at >= DATE_SUB(NOW(), INTERVAL ? MINUTE)
+            `,
+            [windowMinutes]
+        );
+
+        const failureData = failureRows[0] || { failedCount: 0, totalCount: 0 };
+        const failedCount = Number(failureData.failedCount || 0);
+        const totalCount = Number(failureData.totalCount || 0);
+        const failureRate = totalCount > 0 ? Number(((failedCount / totalCount) * 100).toFixed(2)) : 0;
+
+        const [latencyRows] = await convertPool.execute(
+            `
+            SELECT
+                TIMESTAMPDIFF(SECOND, processing_started_at, completed_at) AS latencySec
+            FROM file_convert_metadata
+            WHERE completed_at IS NOT NULL
+              AND processing_started_at IS NOT NULL
+              AND completed_at >= DATE_SUB(NOW(), INTERVAL ? MINUTE)
+              AND convert_status = 'completed'
+            ORDER BY latencySec ASC
+            `,
+            [windowMinutes]
+        );
+
+        const latencyValues = latencyRows
+            .map((row) => Number(row.latencySec))
+            .filter((value) => Number.isFinite(value) && value >= 0);
+
+        const sampleSize = latencyValues.length;
+        const avgSec = sampleSize > 0
+            ? Number((latencyValues.reduce((acc, value) => acc + value, 0) / sampleSize).toFixed(2))
+            : 0;
+        const p95Index = sampleSize > 0 ? Math.max(0, Math.ceil(sampleSize * 0.95) - 1) : 0;
+        const p95Sec = sampleSize > 0 ? Number(latencyValues[p95Index].toFixed(2)) : 0;
+
+        const [recentFailureRows] = await convertPool.execute(
+            `
+            SELECT
+                cl.message,
+                cl.metadata_id AS metadataId,
+                cl.created_at AS createdAt
+            FROM convert_log cl
+            WHERE cl.level = 'error'
+            ORDER BY cl.created_at DESC
+            LIMIT 20
+            `
+        );
+
+        let queueMetrics;
+        try {
+            queueMetrics = await getVideoQueueRuntimeMetrics();
+        } catch {
+            queueMetrics = {
+                queueName: 'video-convert',
+                waiting: queueFromDb.waiting,
+                active: queueFromDb.active,
+                completed: 0,
+                failed: 0,
+                redis: 'disconnected',
+                isActive: false,
+                concurrency: Number(process.env.VIDEO_CONCURRENCY || 1),
+            };
+        }
+
+        return successResponse(res, '대시보드 지표 조회 성공', {
+            timestamp: new Date().toISOString(),
+            queue: {
+                waiting: queueMetrics.waiting ?? queueFromDb.waiting,
+                active: queueMetrics.active ?? queueFromDb.active,
+                completed: queueMetrics.completed ?? queueFromDb.completed,
+                failed: queueMetrics.failed ?? queueFromDb.failed,
+            },
+            throughput: throughputRows.map((row) => ({
+                time: row.time,
+                processed: Number(row.processed || 0),
+                failed: Number(row.failed || 0),
+            })),
+            failure: {
+                lastHourFailed: failedCount,
+                failureRate,
+            },
+            latency: {
+                avgSec,
+                p95Sec,
+                sampleSize,
+            },
+            recentFailures: recentFailureRows.map((row) => ({
+                message: row.message || '알 수 없는 오류',
+                metadataId: row.metadataId ? Number(row.metadataId) : null,
+                createdAt: row.createdAt ? new Date(row.createdAt).toISOString() : null,
+            })),
+            worker: {
+                isActive: Boolean(queueMetrics.isActive),
+                concurrency: Number(queueMetrics.concurrency || 1),
+                redis: queueMetrics.redis || 'disconnected',
+                queueName: queueMetrics.queueName || 'video-convert',
+            },
+            timeoutPolicy: {
+                baseFormula: '420 + ceil(sizeMB/100) * 90',
+                clampMinSec: VIDEO_TIMEOUT_POLICY.MIN_TIMEOUT_SEC,
+                clampMaxSec: VIDEO_TIMEOUT_POLICY.MAX_TIMEOUT_SEC,
+                reuploadMultiplier: VIDEO_TIMEOUT_POLICY.REUPLOAD_MULTIPLIER,
+                reuploadMaxSec: VIDEO_TIMEOUT_POLICY.MAX_TIMEOUT_SEC,
+            },
+        });
+    } catch (error) {
+        console.error('대시보드 지표 조회 에러:', error);
+        return errorResponse(res, '대시보드 지표 조회 실패', 500, {
+            detail: String(error?.message || 'unknown error'),
+        });
+    }
+};
+
 // ==========================================
 // v7 미디어 변환 전용 추가 로직
 // ==========================================
@@ -820,9 +1035,12 @@ import * as convertRepo from '../repositories/convertMetadataRepo.js';
 import { hashFileStream, findDuplicate } from '../services/dedup.js';
 import { isVideo, isImage, processImage } from '../services/mediaProcessor.js';
 import { addVideoJob } from '../services/videoQueue.js';
+import { getVideoQueueRuntimeMetrics } from '../services/videoQueue.js';
 import { atomicUpload } from '../services/web_dav/webdavClient.js';
 import { safeDelete, safeDeleteMany } from '../utils/tempCleaner.js';
 import { dbLog } from '../utils/dbLogger.js';
+import { computeDynamicTimeoutSec, VIDEO_TIMEOUT_POLICY } from '../utils/videoTimeout.js';
+import convertPool from '../config/convertDatabase.js';
 
 const toSuccessResult = (message, data = {}, status = 200) => ({
     status,
@@ -834,7 +1052,7 @@ const toErrorResult = (message, status = 500, data = {}) => ({
     body: { message: String(message || 'Internal server error'), status, ...data },
 });
 
-const processConvertUploadFile = async ({ file, rawPath, domainType, domainId }) => {
+const processConvertUploadFile = async ({ file, rawPath, domainType, domainId, requestStartedAt = Date.now() }) => {
     if (!file) {
         return toErrorResult('파일이 거부되었거나 전송되지 않았습니다.', 400);
     }
@@ -846,11 +1064,23 @@ const processConvertUploadFile = async ({ file, rawPath, domainType, domainId })
     }
 
     const ext = file.originalname.split('.').pop()?.toLowerCase() || '';
+    const now = () => Date.now();
+    flowLog({
+        metadataId: null,
+        originalName: file.originalname,
+        path: uploadPath,
+        phase: 'request',
+        elapsedMs: now() - requestStartedAt,
+    });
 
     try {
         const hash = await hashFileStream(file.path);
 
         let record;
+        let isReupload = false;
+        let attemptReason = null;
+        let previousError = '';
+        let previousFailureType = '';
         try {
             record = await convertRepo.create({
                 domainType: domainType || null,
@@ -865,31 +1095,107 @@ const processConvertUploadFile = async ({ file, rawPath, domainType, domainId })
             });
         } catch (err) {
             if (err.code === 'ER_DUP_ENTRY') {
-                const existing = await findDuplicate(hash);
-                safeDelete(file.path);
-
-                if (existing) {
+                const existingCompleted = await findDuplicate(hash);
+                if (existingCompleted) {
+                    safeDelete(file.path);
                     return toSuccessResult('기변환 파일 재사용', {
-                        metadataId: existing.id,
-                        convertedPath: existing.converted_path,
+                        metadataId: existingCompleted.id,
+                        convertedPath: existingCompleted.converted_path,
                         reused: true,
                     });
                 }
-                return toErrorResult('동일 파일 변환 중이거나 대기 중입니다.', 409);
+
+                const existing = await convertRepo.findLatestByHash(hash);
+                if (!existing) {
+                    safeDelete(file.path);
+                    return toErrorResult('동일 파일 변환 중이거나 대기 중입니다.', 409);
+                }
+
+                if (['processing', 'uploading', 'uploaded'].includes(existing.convert_status)) {
+                    safeDelete(file.path);
+                    return toErrorResult('동일 파일 변환 중이거나 대기 중입니다.', 409);
+                }
+
+                if (existing.convert_status !== 'failed') {
+                    safeDelete(file.path);
+                    return toErrorResult('동일 파일 재처리를 허용하지 않는 상태입니다.', 409);
+                }
+
+                previousError = String(existing.convert_error || '');
+                previousFailureType = String(existing.failure_type || '');
+                isReupload = true;
+                attemptReason = previousError.toLowerCase().includes('timeout')
+                    ? 'timeout_reupload'
+                    : 'failed_reupload';
+
+                await convertRepo.resetForReprocess(existing.id, {
+                    originalPath: `${uploadPath}/${file.originalname}`,
+                    originalName: file.originalname,
+                    originalExt: ext,
+                    originalSize: file.size,
+                    mimeType: file.mimetype,
+                    etag: `"${hash.substring(0, 16)}"`,
+                });
+                record = await convertRepo.findById(existing.id);
+                if (!record) {
+                    safeDelete(file.path);
+                    return toErrorResult('재처리 대상 레코드 조회 실패', 500);
+                }
+
+                await dbLog('warn', `동일 해시 재업로드 허용: ${attemptReason}`, record.id, previousError);
+                flowLog({
+                    metadataId: record.id,
+                    originalName: file.originalname,
+                    path: `${uploadPath}/${file.originalname}`,
+                    phase: 'request',
+                    elapsedMs: now() - requestStartedAt,
+                    isReupload: true,
+                    attemptReason,
+                });
+                // 중복이지만 재처리 경로이므로 temp 원본은 유지
+            } else {
+                throw err;
             }
-            throw err;
         }
 
         if (isVideo(file.mimetype, ext)) {
             const newName = `${Date.now()}-${crypto.randomUUID()}.${process.env.VIDEO_OUTPUT_FORMAT || 'mp4'}`;
             const webdavPath = `${uploadPath}/${newName}`;
-            const job = await addVideoJob(record.id, file.path, webdavPath);
+            const timeoutSec = computeDynamicTimeoutSec({
+                sizeBytes: file.size,
+                isReupload,
+                previousFailureType,
+                previousError,
+            });
+            const job = await addVideoJob({
+                metadataId: record.id,
+                inputPath: file.path,
+                webdavPath,
+                originalName: file.originalname,
+                queuedAt: requestStartedAt,
+                timeoutSec,
+                sizeBytes: file.size,
+                isReupload,
+                attemptReason,
+            });
             await convertRepo.updateJobId(record.id, job.id);
+            flowLog({
+                metadataId: record.id,
+                originalName: file.originalname,
+                path: webdavPath,
+                phase: 'queued',
+                elapsedMs: now() - requestStartedAt,
+                timeoutSec,
+                isReupload,
+                attemptReason,
+            });
 
             return toSuccessResult('영상 업로드 및 변환 작업 접수 완료', {
                 metadataId: record.id,
                 jobId: job.id,
                 statusUrl: `/webdav/convert-status/${record.id}`,
+                timeoutSec,
+                isReupload,
             }, 202);
         }
 
@@ -897,23 +1203,39 @@ const processConvertUploadFile = async ({ file, rawPath, domainType, domainId })
 
         // CYA는 ffmpeg 변환 대상에서 제외하고 원본 업로드 정책으로 처리
         if (ext === 'cya') {
+            const uniqueFilename = await resolveUniqueFilename(uploadPath, file.originalname);
             await convertRepo.updateStatus(record.id, 'skipped');
-            await atomicUpload(`/${rootPath}/${uploadPath}/${file.originalname}`, file.path);
+            await atomicUpload(`/${rootPath}/${uploadPath}/${uniqueFilename}`, file.path);
             safeDelete(file.path);
+            flowLog({
+                metadataId: record.id,
+                originalName: file.originalname,
+                path: `${uploadPath}/${uniqueFilename}`,
+                phase: 'completed',
+                elapsedMs: now() - requestStartedAt,
+            });
             return toSuccessResult('CYA 원본 업로드 완료 (변환 생략)', {
                 metadataId: record.id,
-                path: `${uploadPath}/${file.originalname}`,
+                path: `${uploadPath}/${uniqueFilename}`,
                 skipped: true,
             });
         }
 
         if (!isImage(file.mimetype, ext)) {
+            const uniqueFilename = await resolveUniqueFilename(uploadPath, file.originalname);
             await convertRepo.updateStatus(record.id, 'skipped');
-            await atomicUpload(`/${rootPath}/${uploadPath}/${file.originalname}`, file.path);
+            await atomicUpload(`/${rootPath}/${uploadPath}/${uniqueFilename}`, file.path);
             safeDelete(file.path);
+            flowLog({
+                metadataId: record.id,
+                originalName: file.originalname,
+                path: `${uploadPath}/${uniqueFilename}`,
+                phase: 'completed',
+                elapsedMs: now() - requestStartedAt,
+            });
             return toSuccessResult('업로드 완료 (변환 불필요)', {
                 metadataId: record.id,
-                path: `${uploadPath}/${file.originalname}`,
+                path: `${uploadPath}/${uniqueFilename}`,
                 skipped: true,
             });
         }
@@ -942,6 +1264,13 @@ const processConvertUploadFile = async ({ file, rawPath, domainType, domainId })
             });
 
             safeDeleteMany(file.path, outputPath);
+            flowLog({
+                metadataId: record.id,
+                originalName: file.originalname,
+                path: `${uploadPath}/${newName}`,
+                phase: 'completed',
+                elapsedMs: now() - requestStartedAt,
+            });
             return toSuccessResult('이미지 변환 및 업로드 완료', {
                 metadataId: record.id,
                 conversion: {
@@ -956,20 +1285,40 @@ const processConvertUploadFile = async ({ file, rawPath, domainType, domainId })
             await convertRepo.updateStatus(record.id, 'failed', processErr.message);
             await dbLog('error', `이미지 처리 실패: ${processErr.message}`, record.id);
             safeDeleteMany(file.path, outputPath);
+            flowLog({
+                metadataId: record.id,
+                originalName: file.originalname,
+                path: `${uploadPath}/${file.originalname}`,
+                phase: 'failed',
+                elapsedMs: now() - requestStartedAt,
+                error: String(processErr?.message || 'unknown error'),
+            });
             return toErrorResult(processErr.message, 500, { metadataId: record.id });
         }
     } catch (globalErr) {
         safeDelete(file.path);
+        flowLog({
+            metadataId: null,
+            originalName: file.originalname,
+            path: uploadPath,
+            phase: 'failed',
+            elapsedMs: now() - requestStartedAt,
+            error: String(globalErr?.message || 'unknown error'),
+        });
         return toErrorResult(globalErr.message, 500);
     }
 };
 
 export const uploadWithConvert = async (req, res) => {
+    if (req.file?.originalname) {
+        req.file.originalname = normalizeOriginalFilename(req.file.originalname);
+    }
     const result = await processConvertUploadFile({
         file: req.file,
         rawPath: req.body?.path,
         domainType: req.body?.domain_type,
         domainId: req.body?.domain_id,
+        requestStartedAt: Date.now(),
     });
     return res.status(result.status).json(result.body);
 };
@@ -995,11 +1344,15 @@ export const uploadWithConvertMultiple = async (req, res) => {
     let failed = 0;
 
     for (const file of files) {
+        if (file?.originalname) {
+            file.originalname = normalizeOriginalFilename(file.originalname);
+        }
         const result = await processConvertUploadFile({
             file,
             rawPath,
             domainType: domain_type,
             domainId: domain_id,
+            requestStartedAt: Date.now(),
         });
 
         if (result.status === 202) queued += 1;

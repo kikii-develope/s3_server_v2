@@ -29,6 +29,9 @@ const normalizeWebDAVPath = (input) => {
 const normalizeRelativePath = (input = '') =>
   String(input).replace(/^\/+|\/+$/g, '').replace(/\/+/g, '/');
 
+const sanitizeFilenameForPath = (filename = '') =>
+  String(filename).replace(/[\/\\\0]/g, '_');
+
 const toRootPath = (input = '') => {
   const normalized = normalizeWebDAVPath(String(input || ''));
   if (!normalized || normalized === '/') return ROOT_PREFIX;
@@ -102,9 +105,13 @@ const getUniqueFilename = async (dirPath, filename) => {
   return newFilename;
 };
 
-export const uploadFile = async (path, file, filename) => {
+export const resolveUniqueFilename = async (dirPath, filename) => {
+  const safeFilename = sanitizeFilenameForPath(filename);
+  return getUniqueFilename(dirPath, safeFilename);
+};
 
-  filename = filename.replace(/ /g, "_");
+export const uploadFile = async (path, file, filename) => {
+  filename = sanitizeFilenameForPath(filename);
 
   await ensureDirectory(path);
 
@@ -150,7 +157,8 @@ export const createDirectory = async (path) => {
 export const uploadSingle = async (path, file, filename) => {
   try {
     // 중복 파일명 처리
-    const uniqueFilename = await getUniqueFilename(path, filename.replace(/ /g, "_"));
+    const safeFilename = sanitizeFilenameForPath(filename);
+    const uniqueFilename = await getUniqueFilename(path, safeFilename);
 
     const { res, file: f } = await uploadFile(path, file, uniqueFilename);
 
@@ -160,7 +168,7 @@ export const uploadSingle = async (path, file, filename) => {
       success: true,
       size: f.size,
       url: getBaseUrl() + toRootPath(`${path}/${f.originalname}`),
-      renamed: uniqueFilename !== filename.replace(/ /g, "_")
+      renamed: uniqueFilename !== safeFilename
     };
   } catch (error) {
     return {
@@ -326,8 +334,9 @@ export const uploadMultipleFilesParallel = async (path, files, filenames, concur
     const chunkPromises = chunk.map(async (file, index) => {
       try {
         const filename = filenameChunk[index];
+        const safeFilename = sanitizeFilenameForPath(filename);
 
-        const filenameExtension = filename.split('.').pop();
+        const filenameExtension = safeFilename.split('.').pop();
         const fileExtension = file.originalname.split(".").pop();
         if (filenameExtension != fileExtension) {
           return {
@@ -342,8 +351,8 @@ export const uploadMultipleFilesParallel = async (path, files, filenames, concur
 
 
         // 중복 파일명 처리
-        const uniqueFilename = await getUniqueFilename(path, filename.replace(/ /g, "_"));
-        const wasRenamed = uniqueFilename !== filename.replace(/ /g, "_");
+        const uniqueFilename = await getUniqueFilename(path, safeFilename);
+        const wasRenamed = uniqueFilename !== safeFilename;
 
         const { res, file: f } = await uploadFile(path, file, uniqueFilename);
 
@@ -444,7 +453,7 @@ export const copyFile = async (sourcePath, destPath, overwrite = true) => {
  * @param {string} filename - 파일명
  */
 export const updateFile = async (path, file, filename) => {
-  filename = filename.replace(/ /g, "_");
+  filename = sanitizeFilenameForPath(filename);
 
   if (path.startsWith("/")) {
     path = path.replace("/", "");

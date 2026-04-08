@@ -8,6 +8,7 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_DB=1
       - SWAGGER_SERVER_URL=http://localhost:${SWAGGER_TEST_PORT:-8989}
       # Docker 컨테이너에서 호스트 MySQL(local_mysql) 접근용
       - DB_HOST=host.docker.internal

@@ -19,11 +19,13 @@ import { getWebdavRootPath } from '../utils/webdavRootPath.js';
 const connection = {
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT) || 6379,
+    db: parseInt(process.env.REDIS_DB || '0', 10) || 0,
 };
 const rootPath = getWebdavRootPath();
 
 // Queue 인스턴스
 export const videoQueue = new Queue('video-convert', { connection });
+let currentWorker = null;
 
 /**
  * CPU 연산 코어 수 기반 동시성 확보
@@ -38,10 +40,30 @@ const getConcurrency = () => {
 /**
  * 작업을 큐에 추가
  */
-export const addVideoJob = async (metadataId, inputPath, webdavPath) => {
+export const addVideoJob = async ({
+    metadataId,
+    inputPath,
+    webdavPath,
+    originalName = null,
+    queuedAt = Date.now(),
+    timeoutSec = null,
+    sizeBytes = null,
+    isReupload = false,
+    attemptReason = null,
+}) => {
     return videoQueue.add(
         'convert',
-        { metadataId, inputPath, webdavPath },
+        {
+            metadataId,
+            inputPath,
+            webdavPath,
+            originalName,
+            queuedAt,
+            timeoutSec,
+            sizeBytes,
+            isReupload,
+            attemptReason,
+        },
         {
             attempts: 3, // 최대 3회 시도
             backoff: { type: 'exponential', delay: 5000 },
@@ -60,7 +82,17 @@ export const startVideoWorker = () => {
     const worker = new Worker(
         'video-convert',
         async (job) => {
-            const { metadataId, inputPath, webdavPath } = job.data;
+            const {
+                metadataId,
+                inputPath,
+                webdavPath,
+                originalName,
+                queuedAt,
+                timeoutSec,
+                sizeBytes,
+                isReupload,
+                attemptReason,
+            } = job.data;
             let outputPath = null;
             let completed = false;
 
@@ -86,7 +118,7 @@ export const startVideoWorker = () => {
                     throw new Error('No such file: 임시 원본 파일이 유실되었습니다.');
                 }
 
-                const result = await processVideo(inputPath);
+                const result = await processVideo(inputPath, { timeoutSec });
                 outputPath = result.outputPath;
 
                 // ── 4. uploading → atomic ──
@@ -105,6 +137,18 @@ export const startVideoWorker = () => {
                     convertedSize: stat.size,
                 });
                 await dbLog('info', '영상 변환 분산 처리 완료', metadataId);
+                const elapsedMs = Date.now() - Number(queuedAt || Date.now());
+                console.log(`[UPLOAD_FLOW] ${JSON.stringify({
+                    metadataId,
+                    originalName,
+                    path: webdavPath,
+                    phase: 'completed',
+                    elapsedMs,
+                    timeoutSec,
+                    sizeBytes,
+                    isReupload,
+                    attemptReason,
+                })}`);
                 completed = true;
             } finally {
                 if (completed) {
@@ -120,7 +164,17 @@ export const startVideoWorker = () => {
 
     worker.on('failed', async (job, err) => {
         if (!job) return;
-        const { metadataId, inputPath } = job.data;
+        const {
+            metadataId,
+            inputPath,
+            originalName,
+            webdavPath,
+            queuedAt,
+            timeoutSec,
+            sizeBytes,
+            isReupload,
+            attemptReason,
+        } = job.data;
         const retryable = isRetryable(err);
         const maxAttempts = Number(job.opts?.attempts || 1);
         const exhausted = Number(job.attemptsMade || 0) >= maxAttempts;
@@ -162,6 +216,19 @@ export const startVideoWorker = () => {
             `영상 실패[${retryable ? 'retry' : 'perm'}]: ${err.message}`,
             metadataId
         );
+        console.log(`[UPLOAD_FLOW] ${JSON.stringify({
+            metadataId,
+            originalName,
+            path: webdavPath,
+            phase: 'failed',
+            elapsedMs: Date.now() - Number(queuedAt || Date.now()),
+            error: String(err?.message || 'unknown error'),
+            timeoutSec,
+            sizeBytes,
+            isReupload,
+            attemptReason,
+            exhausted,
+        })}`);
 
         if (!retryable) {
             job.discard(); // 영구 실패면 재시도 큐에서 완전 버림
@@ -172,5 +239,49 @@ export const startVideoWorker = () => {
         await repo.releaseLock(metadataId);
     });
 
+    currentWorker = worker;
     return worker;
+};
+
+export const getVideoQueueRuntimeMetrics = async () => {
+    const withTimeout = async (promise, fallback, timeoutMs = 800) => {
+        let timeoutHandle;
+        try {
+            return await Promise.race([
+                promise,
+                new Promise((resolve) => {
+                    timeoutHandle = setTimeout(() => resolve(fallback), timeoutMs);
+                }),
+            ]);
+        } finally {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+        }
+    };
+
+    const jobCounts = await withTimeout(
+        videoQueue.getJobCounts('waiting', 'active', 'completed', 'failed'),
+        { waiting: 0, active: 0, completed: 0, failed: 0 }
+    );
+    let redisStatus = 'disconnected';
+
+    try {
+        const client = await withTimeout(videoQueue.client, null);
+        redisStatus = client?.status === 'ready' ? 'connected' : (client?.status || 'disconnected');
+    } catch {
+        redisStatus = 'disconnected';
+    }
+
+    const workerConcurrency = Number(currentWorker?.opts?.concurrency) || getConcurrency();
+    const isActive = Boolean(currentWorker && !currentWorker.closing);
+
+    return {
+        queueName: videoQueue.name,
+        waiting: Number(jobCounts?.waiting || 0),
+        active: Number(jobCounts?.active || 0),
+        completed: Number(jobCounts?.completed || 0),
+        failed: Number(jobCounts?.failed || 0),
+        redis: redisStatus,
+        isActive,
+        concurrency: workerConcurrency,
+    };
 };

@@ -26,6 +26,17 @@ export const findByHash = async (contentHash) => {
     return rows[0] || null;
 };
 
+export const findLatestByHash = async (contentHash) => {
+    const [rows] = await convertPool.execute(
+        `SELECT * FROM file_convert_metadata
+     WHERE content_hash = ?
+     ORDER BY id DESC
+     LIMIT 1`,
+        [contentHash]
+    );
+    return rows[0] || null;
+};
+
 export const findByStatus = async (status) => {
     const [rows] = await convertPool.execute(
         'SELECT * FROM file_convert_metadata WHERE convert_status = ?',
@@ -110,6 +121,47 @@ export const updateJobId = (id, jobId) => dbRetry(async () => {
     await convertPool.execute(
         'UPDATE file_convert_metadata SET convert_job_id = ? WHERE id = ?',
         [jobId, id]
+    );
+});
+
+export const resetForReprocess = (id, info = {}) => dbRetry(async () => {
+    const {
+        originalPath = null,
+        originalName = null,
+        originalExt = null,
+        originalSize = null,
+        mimeType = null,
+        etag = null,
+    } = info;
+
+    await convertPool.execute(
+        `UPDATE file_convert_metadata SET
+       convert_status = 'uploaded',
+       convert_job_id = NULL,
+       convert_error = NULL,
+       retry_count = 0,
+       failure_type = NULL,
+       worker_id = NULL,
+       locked_at = NULL,
+       temp_upload_path = NULL,
+       converted_path = NULL,
+       converted_name = NULL,
+       converted_ext = NULL,
+       converted_size = NULL,
+       converted_hash = NULL,
+       converted_etag = NULL,
+       processing_started_at = NULL,
+       uploading_started_at = NULL,
+       completed_at = NULL,
+       last_retry_at = NULL,
+       original_path = COALESCE(?, original_path),
+       original_name = COALESCE(?, original_name),
+       original_ext = COALESCE(?, original_ext),
+       original_size = COALESCE(?, original_size),
+       mime_type = COALESCE(?, mime_type),
+       etag = COALESCE(?, etag)
+     WHERE id = ?`,
+        [originalPath, originalName, originalExt, originalSize, mimeType, etag, id]
     );
 });
 

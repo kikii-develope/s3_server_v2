@@ -9,7 +9,14 @@ const pool = mysql.createPool({
     charset: 'utf8mb4',
     waitForConnections: true,
     connectionLimit: 10,
-    queueLimit: 0
+    queueLimit: 0,
+    timezone: '+09:00'
+});
+
+pool.on('connection', (connection) => {
+    connection.query("SET time_zone = '+09:00'", () => {
+        // 세션 타임존 설정 실패 시 기본값 유지
+    });
 });
 
 /**
@@ -18,6 +25,7 @@ const pool = mysql.createPool({
 export const testConnection = async () => {
     try {
         const connection = await pool.getConnection();
+        await connection.query("SET time_zone = '+09:00'");
         console.log('DB 연결 성공');
         connection.release();
         return true;

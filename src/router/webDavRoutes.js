@@ -14,6 +14,7 @@ import {
     moveFileInWebDAV,
     copyFileInWebDAV,
     getWebDAVStats,
+    getDashboardMetrics,
     uploadWithConvert,
     uploadWithConvertMultiple,
     getConvertStatus
@@ -860,5 +861,6 @@ router.put('/copy', copyFileInWebDAV);
  *         description: 서버 오류
  */
 router.get('/stats', getWebDAVStats);
+router.get('/dashboard/metrics', getDashboardMetrics);
 
 export default router; 

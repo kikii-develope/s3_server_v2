@@ -16,11 +16,19 @@ const convertPool = mysql.createPool({
     waitForConnections: true,
     connectionLimit: 5,
     queueLimit: 0,
+    timezone: '+09:00',
+});
+
+convertPool.on('connection', (connection) => {
+    connection.query("SET time_zone = '+09:00'", () => {
+        // 세션 타임존 설정 실패 시 기본값 유지
+    });
 });
 
 export const testConvertConnection = async () => {
     try {
         const conn = await convertPool.getConnection();
+        await conn.query("SET time_zone = '+09:00'");
         conn.release();
         return true;
     } catch {
